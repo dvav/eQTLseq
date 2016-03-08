@@ -19,8 +19,36 @@ def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_trait_normal(G, n_markers_causal=10, s2e=1, h2=0.5):
+def simulate_phenotypes(G, mu=None, phi=None, kind='Trait', mdl='Normal', n_markers_causal=2, n_genes=100,
+                        n_genes_affected=10, s2e=1, h2=0.5):
+    """Simulate eQTLs or single traits."""
+    args = locals()
+
+    assert kind in ('eQTLs', 'Trait')
+    assert mdl in ('NBinom', 'Normal')
+
+    #
+    fcn = {
+        'eQTLs': {
+            'Normal': _simulate_eQTLs_normal,
+            'NBinom': _simulate_eQTLs_nbinom
+        },
+        'Trait': {
+            'Normal': _simulate_trait_normal
+        }
+    }[kind][mdl]
+
+    #
+    return fcn(**args)
+
+
+def _simulate_trait_normal(**args):
     """Simulate a quantitative, normally distributed trait."""
+    G = args['G']
+    n_markers_causal = args['n_markers_causal']
+    s2e = args['s2e']
+    h2 = args['h2']
+
     n_samples, n_markers = G.shape
     assert n_markers >= n_markers_causal
 
@@ -40,8 +68,15 @@ def simulate_trait_normal(G, n_markers_causal=10, s2e=1, h2=0.5):
     return {'Y': Y, 'coefs': coefs}
 
 
-def simulate_eQTL_normal(G, n_markers_causal=2, n_genes=100, n_genes_affected=10, s2e=1, h2=0.5):
+def _simulate_eQTLs_normal(**args):
     """Simulate eQTLs with normally distributed gene expression data."""
+    G = args['G']
+    n_markers_causal = args['n_markers_causal']
+    n_genes = args['n_genes']
+    n_genes_affected = args['n_genes_affected']
+    s2e = args['s2e']
+    h2 = args['h2']
+
     n_samples, n_markers = G.shape
     assert n_markers >= n_markers_causal
     assert n_genes >= n_genes_affected
@@ -66,8 +101,16 @@ def simulate_eQTL_normal(G, n_markers_causal=2, n_genes=100, n_genes_affected=10
     return {'Y': Y, 'coefs': coefs}
 
 
-def simulate_eQTL_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, h2=0.5):
+def _simulate_eQTLs_nbinom(**args):
     """Simulate eQTLs with normally distributed gene expression data."""
+    G = args['G']
+    mu = args['mu']
+    phi = args['phi']
+    n_markers_causal = args['n_markers_causal']
+    n_genes = args['n_genes']
+    n_genes_affected = args['n_genes_affected']
+    h2 = args['h2']
+
     n_samples, n_markers = G.shape
     n_genes = phi.size if n_genes is None else n_genes
 

@@ -3,7 +3,7 @@
 import numpy as _nmp
 import numpy.random as _rnd
 
-import eQTLseq.utils as _utils
+import eQTLseq.mdl_common_gibbs as _common
 
 
 def mdl_normal_gibbs(Y, G, n_iters=1000, n_burnin=500, s2_lims=(1e-6, 1e6)):
@@ -34,9 +34,9 @@ def mdl_normal_gibbs(Y, G, n_iters=1000, n_burnin=500, s2_lims=(1e-6, 1e6)):
     beta_sum, beta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
 
     for itr in range(1, n_iters + 1):
-        beta = _sample_beta(GTG, GTY, tau, zeta)
-        tau = _sample_tau(Y, G, beta, zeta)
-        zeta = _sample_zeta(beta, tau)
+        beta = _common.sample_beta(GTG, GTY, tau, zeta)
+        tau = _common.sample_tau(Y, G, beta, zeta)
+        zeta = _common.sample_zeta(beta, tau)
 
         zeta = _nmp.clip(zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
@@ -64,38 +64,3 @@ def mdl_normal_gibbs(Y, G, n_iters=1000, n_burnin=500, s2_lims=(1e-6, 1e6)):
             'tau_mean': tau_mean, 'tau_var': tau_var,
             'zeta_mean': zeta_mean, 'zeta_var': zeta_var,
             'beta_mean': beta_mean, 'beta_var': beta_var}
-
-
-def _sample_beta(GTG, GTY, tau, zeta):
-    _, n_markers = zeta.shape
-
-    # sample beta
-    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.identity(n_markers))
-    b = tau * GTY
-    beta = _utils.sample_multivariate_normal2(b.T, A)
-
-    ##
-    return beta
-
-
-def _sample_tau(Y, G, beta, zeta):
-    n_samples, n_markers = G.shape
-
-    # sample tau
-    resid = Y - G.dot(beta.T)
-    shape = 0.5 * (n_samples + n_markers)
-    rate = 0.5 * _nmp.sum(resid ** 2, 0) + 0.5 * _nmp.sum(beta ** 2 * zeta, 1)
-    tau = _rnd.gamma(shape, 1 / rate)
-
-    ##
-    return tau
-
-
-def _sample_zeta(beta, tau):
-    # sample zeta
-    shape = 0.5
-    rate = 0.5 * beta**2 * tau[:, None]
-    zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
-
-    ##
-    return zeta

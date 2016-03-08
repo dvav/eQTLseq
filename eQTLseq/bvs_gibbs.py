@@ -63,7 +63,7 @@ def _sample_tau(Y, G, beta, tau_beta):
     n_samples, n_markers = G.shape
 
     # sample tau
-    resid = Y - _nmp.dot(G, beta)
+    resid = Y - G.dot(beta)
     shape = 0.5 * (n_markers + n_samples)
     rate = 0.5 * _nmp.sum(resid ** 2) + 0.5 * _nmp.sum(beta ** 2 * tau_beta)
     tau = _rnd.gamma(shape, 1 / rate)
