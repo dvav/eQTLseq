@@ -7,7 +7,7 @@ import scipy.special as _spc
 import eQTLseq.mdl_common_gibbs as _common
 
 
-class ModelNBinomGibbs:
+class ModelNBinomGibbs(object):
     """A negative binomial model estimated using Gibbs sampling."""
 
     def __init__(self, Y, G, n_iters, n_burnin, s2_lims):

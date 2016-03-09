@@ -1,45 +1,41 @@
-"""Implements ModelNormalGibbs."""
+"""Implements ModelTraitNormalGibbs."""
 
 import numpy as _nmp
 import numpy.random as _rnd
 
-import eQTLseq.mdl_common_gibbs as _common
+import eQTLseq.utils as _utils
 
 
-class ModelNormalGibbs(object):
-    """A normal model estimated using Gibbs sampling."""
+class ModelTraitNormalGibbs(object):
+    """A normal model of Bayesian variable selection through shrinkage for a single trait estimated using Gibbs."""
 
     def __init__(self, Y, G, n_iters, n_burnin, s2_lims):
         """TODO."""
         # standardize data
-        self.Y = (Y - _nmp.mean(Y, 0)) / _nmp.std(Y, 0)
+        self.Y = (Y - _nmp.mean(Y)) / _nmp.std(Y)
         self.G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
 
         # used later in calculations
         self.GTG = self.G.T.dot(self.G)
         self.GTY = self.G.T.dot(self.Y)
 
-        # number of samples, genes and genetic markers
-        n_samples1, n_genes = Y.shape
-        n_samples2, n_markers = G.shape
-
-        assert n_samples1 == n_samples2
+        # number of samples and genetic markers
+        n_samples, n_markers = self.G.shape
 
         # initial conditions
-        self.tau = _nmp.ones(n_genes)
-        self.zeta = _nmp.ones((n_genes, n_markers))
-        self.beta = _rnd.randn(n_genes, n_markers)
+        self.tau = _rnd.rand()
+        self.zeta = _rnd.rand(n_markers)
+        self.beta = _rnd.normal(0, 1 / _nmp.sqrt(self.zeta))
 
         self.traces = _nmp.zeros((n_iters + 1, 3))
         self.traces[0, :] = [
-            1 / _nmp.sqrt(_nmp.sum(self.tau**2)),
+            1 / self.tau,
             1 / _nmp.sqrt(_nmp.sum(self.zeta**2)),
             _nmp.sqrt(_nmp.sum(self.beta**2))
         ]
-
-        self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
-        self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
-        self.beta_sum, self.beta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
+        self.tau_sum, self.tau2_sum = 0, 0
+        self.zeta_sum, self.zeta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
+        self.beta_sum, self.beta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
 
         # other parameters
         self.n_iters = n_iters
@@ -50,16 +46,16 @@ class ModelNormalGibbs(object):
     def update(self, itr):
         """TODO."""
         # sample beta, tau and zeta
-        self.beta = _common.sample_beta(self.GTG, self.GTY, self.tau, self.zeta)
-        self.tau = _common.sample_tau(self.Y, self.G, self.beta, self.zeta)
-        self.zeta = _common.sample_zeta(self.beta, self.tau)
+        self.beta = _sample_beta(self.GTG, self.GTY, self.tau, self.zeta)
+        self.tau = _sample_tau(self.Y, self.G, self.beta, self.zeta)
+        self.zeta = _sample_zeta(self.beta, self.tau)
 
         self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
 
         # update the rest
-        tau2, zeta2, beta2 = self.tau**2, self.zeta**2, self.beta**2
+        beta2, zeta2 = self.beta**2, self.zeta**2
         self.traces[itr, :] = [
-            1 / _nmp.sqrt(_nmp.sum(tau2)),
+            1 / self.tau,
             1 / _nmp.sqrt(_nmp.sum(zeta2)),
             _nmp.sqrt(_nmp.sum(beta2))
         ]
@@ -69,7 +65,7 @@ class ModelNormalGibbs(object):
             self.zeta_sum += self.zeta
             self.beta_sum += self.beta
 
-            self.tau2_sum += tau2
+            self.tau2_sum += self.tau**2
             self.zeta2_sum += zeta2
             self.beta2_sum += beta2
 
@@ -84,3 +80,36 @@ class ModelNormalGibbs(object):
                 'tau_mean': tau_mean, 'tau_var': tau_var,
                 'zeta_mean': zeta_mean, 'zeta_var': zeta_var,
                 'beta_mean': beta_mean, 'beta_var': beta_var}
+
+
+def _sample_beta(GTG, GTY, tau, zeta):
+    # sample beta
+    A = tau * (GTG + _nmp.diag(zeta))
+    b = tau * GTY
+    beta = _utils.sample_multivariate_normal(b, A)
+
+    ##
+    return beta
+
+
+def _sample_tau(Y, G, beta, zeta):
+    n_samples, n_markers = G.shape
+
+    # sample tau
+    resid = Y - G.dot(beta)
+    shape = 0.5 * (n_markers + n_samples)
+    rate = 0.5 * _nmp.sum(resid ** 2) + 0.5 * _nmp.sum(beta ** 2 * zeta)
+    tau = _rnd.gamma(shape, 1 / rate)
+
+    ##
+    return tau
+
+
+def _sample_zeta(beta, tau):
+    # sample tau_beta
+    shape = 0.5
+    rate = 0.5 * beta**2 * tau
+    zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
+
+    ##
+    return zeta

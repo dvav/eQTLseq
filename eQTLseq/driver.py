@@ -1,20 +1,27 @@
 """Implements run()."""
 
-from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
+from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
+from eQTLseq.ModelTraitNormalGibbs import ModelTraitNormalGibbs as _ModelTraitNormalGibbs
 
 
-def run(Y, G, mdl='Normal', alg='Gibbs', n_iters=1000, n_burnin=None, s2_lims=(1e-6, 1e6)):
+def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', n_iters=1000, n_burnin=None, s2_lims=(1e-6, 1e6)):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
+    assert kind in ('eQTLs', 'Trait')
     assert mdl in ('Normal', 'NBinom')
     assert alg in ('Gibbs',)
 
     # prepare model
     Model = {
-        'Normal': {'Gibbs': _ModelNormalGibbs},
-        'NBinom': {'Gibbs': _ModelNBinomGibbs}
-    }[mdl][alg]
+        'eQTLs': {
+            'Normal': {'Gibbs': _ModelNormalGibbs},
+            'NBinom': {'Gibbs': _ModelNBinomGibbs}
+        },
+        'Trait': {
+            'Normal': {'Gibbs': _ModelTraitNormalGibbs}
+        }
+    }[kind][mdl][alg]
     mdl = Model(Y, G, n_iters, n_burnin, s2_lims)
 
     # loop
