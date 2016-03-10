@@ -5,6 +5,7 @@ import numpy.random as _rnd
 import scipy.special as _spc
 
 import eQTLseq.mdl_common_gibbs as _common
+import eQTLseq.utils as _utils
 
 
 class ModelNBinomGibbs(object):
@@ -37,9 +38,9 @@ class ModelNBinomGibbs(object):
         self.traces = _nmp.zeros((n_iters + 1, 8))
         self.traces[0, :] = [
             self.mu_phi, self.tau_phi,
-            _nmp.sqrt(_nmp.sum(_nmp.log(self.phi)**2)), _nmp.sqrt(_nmp.sum(_nmp.log(self.mu)**2)),
-            1 / _nmp.sqrt(_nmp.sum(self.tau_psi**2)), _nmp.sqrt(_nmp.sum(self.psi**2)),
-            1 / _nmp.sqrt(_nmp.sum(self.zeta**2)), _nmp.sqrt(_nmp.sum(self.beta**2))
+            _utils.norm(self.phi), _utils.norm(self.mu),
+            1 / _utils.norm(self.tau_psi), _utils.norm(self.psi),
+            1 / _utils.norm(self.zeta), _utils.norm(self.beta)
         ]
 
         self.beta_sum, self.beta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
@@ -80,12 +81,11 @@ class ModelNBinomGibbs(object):
         self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
 
         # update the rest
-        phi2, mu2, beta2 = self.phi**2, self.mu**2, self.beta**2
         self.traces[itr, :] = [
             self.mu_phi, self.tau_phi,
-            _nmp.sqrt(_nmp.sum(phi2)), _nmp.sqrt(_nmp.sum(mu2)),
-            1 / _nmp.sqrt(_nmp.sum(self.tau_psi**2)), _nmp.sqrt(_nmp.sum(self.psi**2)),
-            1 / _nmp.sqrt(_nmp.sum(self.zeta**2)), _nmp.sqrt(_nmp.sum(beta2))
+            _utils.norm(self.phi), _utils.norm(self.mu),
+            1 / _utils.norm(self.tau_psi), _utils.norm(self.psi),
+            1 / _utils.norm(self.zeta), _utils.norm(self.beta)
         ]
 
         if(itr > self.n_burnin):
@@ -93,9 +93,9 @@ class ModelNBinomGibbs(object):
             self.phi_sum += self.phi
             self.mu_sum += self.mu
 
-            self.beta2_sum += beta2
-            self.phi2_sum += phi2
-            self.mu2_sum += mu2
+            self.beta2_sum += self.beta**2
+            self.phi2_sum += self.phi**2
+            self.mu2_sum += self.mu**2
 
     def stats(self):
         """TODO."""

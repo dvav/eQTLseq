@@ -4,13 +4,19 @@ from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelTraitNormalGibbs import ModelTraitNormalGibbs as _ModelTraitNormalGibbs
 
+import eQTLseq.utils as _utils
 
-def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', n_iters=1000, n_burnin=None, s2_lims=(1e-6, 1e6)):
+
+def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=False, n_iters=1000, n_burnin=None, s2_lims=(1e-6, 1e6)):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
     assert kind in ('eQTLs', 'Trait')
     assert mdl in ('Normal', 'NBinom')
     assert alg in ('Gibbs',)
+
+    # normalize data if necessary
+    if mdl == 'NBinom' and not norm:
+        Y = _utils.normalise_RNAseq_data(Y.T)[0].T
 
     # prepare model
     Model = {

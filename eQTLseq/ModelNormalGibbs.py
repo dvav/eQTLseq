@@ -4,6 +4,7 @@ import numpy as _nmp
 import numpy.random as _rnd
 
 import eQTLseq.mdl_common_gibbs as _common
+import eQTLseq.utils as _utils
 
 
 class ModelNormalGibbs(object):
@@ -32,9 +33,9 @@ class ModelNormalGibbs(object):
 
         self.traces = _nmp.zeros((n_iters + 1, 3))
         self.traces[0, :] = [
-            1 / _nmp.sqrt(_nmp.sum(self.tau**2)),
-            1 / _nmp.sqrt(_nmp.sum(self.zeta**2)),
-            _nmp.sqrt(_nmp.sum(self.beta**2))
+            1 / _utils.norm(self.tau),
+            1 / _utils.norm(self.zeta),
+            _utils.norm(self.beta)
         ]
 
         self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
@@ -57,11 +58,10 @@ class ModelNormalGibbs(object):
         self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
 
         # update the rest
-        tau2, zeta2, beta2 = self.tau**2, self.zeta**2, self.beta**2
         self.traces[itr, :] = [
-            1 / _nmp.sqrt(_nmp.sum(tau2)),
-            1 / _nmp.sqrt(_nmp.sum(zeta2)),
-            _nmp.sqrt(_nmp.sum(beta2))
+            1 / _utils.norm(self.tau),
+            1 / _utils.norm(self.zeta),
+            _utils.norm(self.beta)
         ]
 
         if(itr > self.n_burnin):
@@ -69,9 +69,9 @@ class ModelNormalGibbs(object):
             self.zeta_sum += self.zeta
             self.beta_sum += self.beta
 
-            self.tau2_sum += tau2
-            self.zeta2_sum += zeta2
-            self.beta2_sum += beta2
+            self.tau2_sum += self.tau**2
+            self.zeta2_sum += self.zeta**2
+            self.beta2_sum += self.beta**2
 
     def stats(self):
         """TODO."""

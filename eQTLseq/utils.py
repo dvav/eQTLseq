@@ -107,3 +107,8 @@ def fit_nbinom_model(read_counts, normalised=False):
         'phi': 1 / alpha,
         'converged': converged
     }
+
+
+def norm(x):
+    """Calculate euclidean norm of x."""
+    return _nmp.sqrt(_nmp.sum(x**2))
