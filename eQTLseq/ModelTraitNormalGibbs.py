@@ -9,8 +9,10 @@ import eQTLseq.utils as _utils
 class ModelTraitNormalGibbs(object):
     """A normal model of Bayesian variable selection through shrinkage for a single trait estimated using Gibbs."""
 
-    def __init__(self, Y, G, n_iters, n_burnin, s2_lims):
+    def __init__(self, **args):
         """TODO."""
+        Y, G, n_iters, n_burnin, s2_lims = args['Y'], args['G'], args['n_iters'], args['n_burnin'], args['s2_lims']
+
         # standardize data
         self.Y = (Y - _nmp.mean(Y)) / _nmp.std(Y)
         self.G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
@@ -27,7 +29,8 @@ class ModelTraitNormalGibbs(object):
         self.zeta = _rnd.rand(n_markers)
         self.beta = _rnd.normal(0, 1 / _nmp.sqrt(self.zeta))
 
-        self.traces = _nmp.zeros((n_iters + 1, 3))
+        self.traces = _nmp.empty((n_iters + 1, 3))
+        self.traces.fill(_nmp.nan)
         self.traces[0, :] = [
             1 / self.tau,
             1 / _utils.norm(self.zeta),
@@ -75,10 +78,12 @@ class ModelTraitNormalGibbs(object):
         tau_var, zeta_var, beta_var = self.tau2_sum / N - tau_mean**2, self.zeta2_sum / N - zeta_mean**2, \
             self.beta2_sum / N - beta_mean**2
 
-        return {'traces': self.traces,
-                'tau_mean': tau_mean, 'tau_var': tau_var,
-                'zeta_mean': zeta_mean, 'zeta_var': zeta_var,
-                'beta_mean': beta_mean, 'beta_var': beta_var}
+        return {
+            'traces': self.traces,
+            'tau': tau_mean, 'tau_se': _nmp.sqrt(tau_var / N),
+            'zeta': zeta_mean, 'zeta_se': _nmp.sqrt(zeta_var / N),
+            'beta': beta_mean, 'beta_se': _nmp.sqrt(beta_var / N)
+        }
 
 
 def _sample_beta(GTG, GTY, tau, zeta):

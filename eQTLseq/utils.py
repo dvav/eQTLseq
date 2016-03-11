@@ -7,6 +7,11 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 
 
+def norm(x):
+    """Calculate euclidean norm of x."""
+    return _nmp.sqrt(_nmp.sum(x**2))
+
+
 def chol_solve(A, b):
     """Solve A * x = b, where A is symmetric positive definite, using the Cholesky factorisation of A."""
     a = _lin.cho_factor(A)
@@ -107,8 +112,3 @@ def fit_nbinom_model(read_counts, normalised=False):
         'phi': 1 / alpha,
         'converged': converged
     }
-
-
-def norm(x):
-    """Calculate euclidean norm of x."""
-    return _nmp.sqrt(_nmp.sum(x**2))

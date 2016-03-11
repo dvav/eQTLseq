@@ -4,15 +4,17 @@ import numpy as _nmp
 import numpy.random as _rnd
 import scipy.special as _spc
 
-import eQTLseq.mdl_common_gibbs as _common
+import eQTLseq.mdl_common as _common
 import eQTLseq.utils as _utils
 
 
 class ModelNBinomGibbs(object):
     """A negative binomial model estimated using Gibbs sampling."""
 
-    def __init__(self, Y, G, n_iters, n_burnin, s2_lims):
+    def __init__(self, **args):
         """TODO."""
+        Y, G, n_iters, n_burnin, s2_lims = args['Y'], args['G'], args['n_iters'], args['n_burnin'], args['s2_lims']
+
         # standarize genotypes
         self.Y = Y
         self.G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
@@ -35,7 +37,8 @@ class ModelNBinomGibbs(object):
         self.beta = _rnd.randn(n_genes, n_markers)
         self.psi = _rnd.randn(n_samples, n_genes)
 
-        self.traces = _nmp.zeros((n_iters + 1, 8))
+        self.traces = _nmp.empty((n_iters + 1, 8))
+        self.traces.fill(_nmp.nan)
         self.traces[0, :] = [
             self.mu_phi, self.tau_phi,
             _utils.norm(self.phi), _utils.norm(self.mu),
