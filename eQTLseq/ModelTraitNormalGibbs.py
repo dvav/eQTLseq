@@ -29,9 +29,9 @@ class ModelTraitNormalGibbs(object):
         self.zeta = _rnd.rand(n_markers)
         self.beta = _rnd.normal(0, 1 / _nmp.sqrt(self.zeta))
 
-        self.traces = _nmp.empty((n_iters + 1, 3))
-        self.traces.fill(_nmp.nan)
-        self.traces[0, :] = [
+        self._traces = _nmp.empty((n_iters + 1, 3))
+        self._traces.fill(_nmp.nan)
+        self._traces[0, :] = [
             1 / self.tau,
             1 / _utils.norm(self.zeta),
             _utils.norm(self.beta)
@@ -56,7 +56,7 @@ class ModelTraitNormalGibbs(object):
         self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
 
         # update the rest
-        self.traces[itr, :] = [
+        self._traces[itr, :] = [
             1 / self.tau,
             1 / _utils.norm(self.zeta),
             _utils.norm(self.beta)
@@ -71,7 +71,13 @@ class ModelTraitNormalGibbs(object):
             self.zeta2_sum += self.zeta**2
             self.beta2_sum += self.beta**2
 
-    def stats(self):
+    @property
+    def traces(self):
+        """TODO."""
+        return self._traces
+
+    @property
+    def estimates(self):
         """TODO."""
         N = self.n_iters - self.n_burnin
         tau_mean, zeta_mean, beta_mean = self.tau_sum / N, self.zeta_sum / N, self.beta_sum / N
@@ -79,7 +85,6 @@ class ModelTraitNormalGibbs(object):
             self.beta2_sum / N - beta_mean**2
 
         return {
-            'traces': self.traces,
             'tau': tau_mean, 'tau_se': _nmp.sqrt(tau_var / N),
             'zeta': zeta_mean, 'zeta_se': _nmp.sqrt(zeta_var / N),
             'beta': beta_mean, 'beta_se': _nmp.sqrt(beta_var / N)

@@ -7,8 +7,8 @@ import eQTLseq.mdl_common as _common
 import eQTLseq.utils as _utils
 
 
-class ModelNormalEM(object):
-    """A normal model estimated using Expectation-Maximization."""
+class ModelNormalVB(object):
+    """A normal model estimated using Variational Bayes."""
 
     def __init__(self, **args):
         """TODO."""
@@ -29,9 +29,9 @@ class ModelNormalEM(object):
         assert n_samples1 == n_samples2
 
         # initial conditions
-        self.tau = _nmp.ones(n_genes)
-        self.zeta = _nmp.ones((n_genes, n_markers))
-        self.beta = _rnd.randn(n_genes, n_markers)
+        self.tau, self.tau_var = _nmp.ones(n_genes), _nmp.ones(n_genes)
+        self.zeta, self.zeta_var = _nmp.ones((n_genes, n_markers)), _nmp.ones((n_genes, n_markers))
+        self.beta, self.beta_var = _rnd.randn(n_genes, n_markers), _nmp.ones((n_genes, n_markers))
 
         self.traces = _nmp.empty((n_iters + 1, 3))
         self.traces.fill(_nmp.nan)
@@ -47,13 +47,11 @@ class ModelNormalEM(object):
 
     def update(self, itr):
         """TODO."""
-        # E-step
-        self.zeta = _common.update_zeta(self.beta, self.tau)
+        # update beta, eta, zeta
+        self.beta, self.beta_var = _common.update_beta(self.GTG, self.GTY, self.tau, self.zeta)
+        self.tau, self.tau_var = _common.update_tau(self.Y, self.G, self.beta, self.tau, self.zeta)
+        self.zeta, self.zeta_var = _common.update_zeta(self.beta, self.beta_var, self.tau)
         self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
-
-        # M-step
-        self.beta = _common.update_beta(self.GTG, self.GTY, self.tau, self.zeta)
-        self.tau = _common.update_tau(self.Y, self.G, self.beta, self.zeta)
 
         # update the rest
         self.traces[itr, :] = [
@@ -64,4 +62,9 @@ class ModelNormalEM(object):
 
     def stats(self):
         """TODO."""
-        return {'traces': self.traces, 'tau': self.tau, 'zeta': self.zeta, 'beta': self.beta}
+        return {
+            'traces': self.traces,
+            'tau': self.tau, 'tau_var': self.tau_var,
+            'zeta': self.zeta, 'zeta_var': self.zeta_var,
+            'beta': self.beta, 'beta_var': self.beta_var
+        }
