@@ -7,6 +7,7 @@ from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelTraitNormalGibbs import ModelTraitNormalGibbs as _ModelTraitNormalGibbs
 
 from eQTLseq.ModelTraitNormalVB import ModelTraitNormalVB as _ModelTraitNormalVB
+from eQTLseq.ModelTraitNormalVB2 import ModelTraitNormalVB2 as _ModelTraitNormalVB2
 from eQTLseq.ModelNormalVB import ModelNormalVB as _ModelNormalVB
 
 import eQTLseq.utils as _utils
@@ -18,7 +19,7 @@ def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, 
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
     assert kind in ('eQTLs', 'Trait')
     assert mdl in ('Normal', 'NBinom')
-    assert alg in ('Gibbs', 'VB')
+    assert alg in ('Gibbs', 'VB', 'VB2')
 
     # normalize data if necessary
     if mdl == 'NBinom' and norm:
@@ -31,7 +32,7 @@ def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, 
             'NBinom': {'Gibbs': _ModelNBinomGibbs}
         },
         'Trait': {
-            'Normal': {'Gibbs': _ModelTraitNormalGibbs, 'VB': _ModelTraitNormalVB}
+            'Normal': {'Gibbs': _ModelTraitNormalGibbs, 'VB': _ModelTraitNormalVB, 'VB2': _ModelTraitNormalVB2}
         }
     }[kind][mdl][alg]
     mdl = Model(Y=Y, G=G, n_iters=n_iters, n_burnin=n_burnin, s2_lims=s2_lims)

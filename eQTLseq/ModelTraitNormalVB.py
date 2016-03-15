@@ -100,7 +100,8 @@ def _update_tau(Y, G, beta_mean, tau_mean, zeta_mean):
 def _update_zeta(beta_mean, beta_var, tau_mean):
     # sample tau_beta
     shape = 0.5
-    rate = 0.5 * tau_mean * (beta_mean**2 + beta_var)
+    # rate = 0.5 * tau_mean * (beta_mean**2 + beta_var)
+    rate = 0.5 * tau_mean * beta_mean**2
     zeta_mean = shape / rate
     zeta_var = shape / rate**2
 

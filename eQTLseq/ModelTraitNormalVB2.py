@@ -6,7 +6,7 @@ import numpy.random as _rnd
 import eQTLseq.utils as _utils
 
 
-class ModelTraitNormalVB(object):
+class ModelTraitNormalVB2(object):
     """A normal model of Bayesian variable selection through shrinkage for a single trait estimated using VB."""
 
     def __init__(self, **args):
@@ -90,10 +90,11 @@ def _update_beta_tau(YTY, GTG, GTY, G, zeta_mean):
     return beta_mean, beta_var, tau_mean, tau_var
 
 
-def _update_zeta(beta_mean, beta_var, tau):
+def _update_zeta(beta_mean, beta_var, tau_mean):
     # sample tau_beta
     shape = 0.5
-    rate = 0.5 * tau * (beta_mean**2 + beta_var)
+    # rate = 0.5 * tau * (beta_mean**2 + beta_var)
+    rate = 0.5 * tau_mean * beta_mean**2
     zeta_mean = shape / rate
     zeta_var = shape / rate**2
 
