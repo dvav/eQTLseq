@@ -90,10 +90,11 @@ def _update_tau(Y, G, beta_mean, tau_mean, zeta_mean):
     resid = Y - G.dot(beta_mean)
     shape = 0.5 * (n_markers + n_samples)
     rate = 0.5 * _nmp.sum(resid ** 2) + 0.5 * _nmp.sum(beta_mean ** 2 * zeta_mean) + 0.5 * n_markers / tau_mean
-    tau = shape / rate
+    tau_mean = shape / rate
+    tau_var = shape / rate**2
 
     ##
-    return tau, shape / rate**2
+    return tau_mean, tau_var
 
 
 def _update_zeta(beta_mean, beta_var, tau_mean):
