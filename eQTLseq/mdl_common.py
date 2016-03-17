@@ -46,39 +46,28 @@ def sample_zeta(beta, tau):
 ##
 
 
-def update_beta(GTG, GTY, tau, zeta):
+def update_beta_tau(YTY, GTG, GTY, zeta, n_samples, n_markers):
     """TODO."""
-    _, n_markers = zeta.shape
-
-    # sample beta
-    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.identity(n_markers))
-    b = tau * GTY
-    beta = _nmp.linalg.solve(A, b.T)
-
-    ##
-    return beta, 1 / _nmp.diagonal(A, axis1=1, axis2=2)
-
-
-def update_tau(Y, G, beta, tau, zeta):
-    """TODO."""
-    n_samples, n_markers = G.shape
-
-    # sample tau
-    resid = Y - G.dot(beta.T)
+    # update tau
     shape = 0.5 * (n_samples + n_markers)
-    rate = 0.5 * _nmp.sum(resid ** 2, 0) + 0.5 * _nmp.sum(beta ** 2 * zeta, 1) + 0.5 / tau
+    rate = 0.5 * YTY
     tau = shape / rate
 
+    # update beta
+    A = GTG + zeta[:, :, None] * _nmp.identity(n_markers)
+    beta = _nmp.linalg.solve(A, GTY.T)
+
     ##
-    return tau, shape / rate**2
+    return beta, tau
 
 
-def update_zeta(beta, beta_var, tau):
+def update_zeta(beta, tau):
     """TODO."""
     # sample zeta
     shape = 0.5
-    rate = 0.5 * tau[:, None] * (beta**2 + beta_var)
+    # rate = 0.5 * (beta**2 + beta_var) * tau[:, None]
+    rate = 0.5 * beta**2 * tau[:, None]
     zeta = shape / rate
 
     ##
-    return zeta, shape / rate**2
+    return zeta

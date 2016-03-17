@@ -14,7 +14,7 @@ class ModelTraitNormalGibbs(object):
         Y, G, n_iters, n_burnin, s2_lims = args['Y'], args['G'], args['n_iters'], args['n_burnin'], args['s2_lims']
 
         # standardize data
-        self.Y = (Y - _nmp.mean(Y)) / _nmp.std(Y)
+        self.Y = Y - _nmp.mean(Y)
         self.G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
 
         # used later in calculations
@@ -29,13 +29,10 @@ class ModelTraitNormalGibbs(object):
         self.zeta = _rnd.rand(n_markers)
         self.beta = _rnd.normal(0, 1 / _nmp.sqrt(self.zeta))
 
-        self._traces = _nmp.empty((n_iters + 1, 3))
+        self._traces = _nmp.empty(n_iters + 1)
         self._traces.fill(_nmp.nan)
-        self._traces[0, :] = [
-            1 / self.tau,
-            1 / _utils.norm(self.zeta),
-            _utils.norm(self.beta)
-        ]
+        self._traces[0] = 0
+
         self.tau_sum, self.tau2_sum = 0, 0
         self.zeta_sum, self.zeta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
         self.beta_sum, self.beta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
@@ -52,15 +49,9 @@ class ModelTraitNormalGibbs(object):
         self.beta = _sample_beta(self.GTG, self.GTY, self.tau, self.zeta)
         self.tau = _sample_tau(self.Y, self.G, self.beta, self.zeta)
         self.zeta = _sample_zeta(self.beta, self.tau)
-
         self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
 
-        # update the rest
-        self._traces[itr, :] = [
-            1 / self.tau,
-            1 / _utils.norm(self.zeta),
-            _utils.norm(self.beta)
-        ]
+        self._traces[itr] = _calculate_joint_log_likelihood(self.Y, self.G, self.beta, self.tau, self.zeta)
 
         if(itr > self.n_burnin):
             self.tau_sum += self.tau
@@ -85,9 +76,9 @@ class ModelTraitNormalGibbs(object):
             self.beta2_sum / N - beta_mean**2
 
         return {
-            'tau': tau_mean, 'tau_se': _nmp.sqrt(tau_var / N),
-            'zeta': zeta_mean, 'zeta_se': _nmp.sqrt(zeta_var / N),
-            'beta': beta_mean, 'beta_se': _nmp.sqrt(beta_var / N)
+            'tau': tau_mean, 'tau_var': tau_var,
+            'zeta': zeta_mean, 'zeta_var': zeta_var,
+            'beta': beta_mean, 'beta_var': beta_var
         }
 
 
@@ -122,3 +113,19 @@ def _sample_zeta(beta, tau):
 
     ##
     return zeta
+
+
+def _calculate_joint_log_likelihood(Y, G, beta, tau, zeta):
+    # number of samples and markers
+    n_samples, n_markers = G.shape
+
+    #
+    resid1 = Y - G.dot(beta)
+    resid1 = (resid1**2).sum()
+    resid2 = (beta**2 * zeta).sum()
+
+    loglik = (0.5 * n_samples + 0.5 * n_markers - 1) * _nmp.log(tau) - 0.5 * tau * (resid1 + resid2) \
+        - 0.5 * _nmp.log(zeta).sum()
+
+    #
+    return loglik

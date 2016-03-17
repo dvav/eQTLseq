@@ -4,7 +4,6 @@ import numpy as _nmp
 import numpy.random as _rnd
 
 import eQTLseq.mdl_common as _common
-import eQTLseq.utils as _utils
 
 
 class ModelNormalGibbs(object):
@@ -15,7 +14,7 @@ class ModelNormalGibbs(object):
         Y, G, n_iters, n_burnin, s2_lims = args['Y'], args['G'], args['n_iters'], args['n_burnin'], args['s2_lims']
 
         # standardize data
-        self.Y = (Y - _nmp.mean(Y, 0)) / _nmp.std(Y, 0)
+        self.Y = Y - _nmp.mean(Y, 0)
         self.G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
 
         # used later in calculations
@@ -33,13 +32,9 @@ class ModelNormalGibbs(object):
         self.zeta = _nmp.ones((n_genes, n_markers))
         self.beta = _rnd.randn(n_genes, n_markers)
 
-        self.traces = _nmp.empty((n_iters + 1, 3))
-        self.traces.fill(_nmp.nan)
-        self.traces[0, :] = [
-            1 / _utils.norm(self.tau),
-            1 / _utils.norm(self.zeta),
-            _utils.norm(self.beta)
-        ]
+        self._traces = _nmp.empty(n_iters + 1)
+        self._traces.fill(_nmp.nan)
+        self._traces[0] = 0
 
         self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
@@ -57,15 +52,10 @@ class ModelNormalGibbs(object):
         self.beta = _common.sample_beta(self.GTG, self.GTY, self.tau, self.zeta)
         self.tau = _common.sample_tau(self.Y, self.G, self.beta, self.zeta)
         self.zeta = _common.sample_zeta(self.beta, self.tau)
-
         self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
 
         # update the rest
-        self.traces[itr, :] = [
-            1 / _utils.norm(self.tau),
-            1 / _utils.norm(self.zeta),
-            _utils.norm(self.beta)
-        ]
+        self._traces[itr] = _calculate_joint_log_likelihood(self.Y, self.G, self.beta, self.tau, self.zeta)
 
         if(itr > self.n_burnin):
             self.tau_sum += self.tau
@@ -76,7 +66,13 @@ class ModelNormalGibbs(object):
             self.zeta2_sum += self.zeta**2
             self.beta2_sum += self.beta**2
 
-    def stats(self):
+    @property
+    def traces(self):
+        """TODO."""
+        return self._traces
+
+    @property
+    def estimates(self):
         """TODO."""
         N = self.n_iters - self.n_burnin
         tau_mean, zeta_mean, beta_mean = self.tau_sum / N, self.zeta_sum / N, self.beta_sum / N
@@ -85,7 +81,23 @@ class ModelNormalGibbs(object):
 
         return {
             'traces': self.traces,
-            'tau': tau_mean, 'tau_se': _nmp.sqrt(tau_var / N),
-            'zeta': zeta_mean, 'zeta_se': _nmp.sqrt(zeta_var / N),
-            'beta': beta_mean, 'beta_se': _nmp.sqrt(beta_var / N)
+            'tau': tau_mean, 'tau_var': tau_var,
+            'zeta': zeta_mean, 'zeta_var': zeta_var,
+            'beta': beta_mean, 'beta_var': beta_var
         }
+
+
+def _calculate_joint_log_likelihood(Y, G, beta, tau, zeta):
+    # number of samples and markers
+    n_samples, n_markers = G.shape
+
+    #
+    resid1 = Y - G.dot(beta.T)
+    resid1 = 0.5 * (tau * resid1**2).sum()
+    resid2 = 0.5 * (tau[:, None] * beta**2 * zeta).sum()
+
+    loglik = (0.5 * n_samples + 0.5 * n_markers - 1) * _nmp.log(tau).sum() - resid1 - resid2 \
+        - 0.5 * _nmp.log(zeta).sum()
+
+    #
+    return loglik
