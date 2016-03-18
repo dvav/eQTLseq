@@ -1,5 +1,7 @@
 """Implements various utility functions."""
 
+import joblib as _jbl
+
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.linalg as _lin
@@ -33,6 +35,42 @@ def sample_multivariate_normal(b, A):
 
     # return
     return y + mu
+
+
+# _PARALLEL = _jbl.Parallel(n_jobs=8, backend='threading')
+#
+#
+# def chol_solve_many(A, b):
+#     """Solve A * x = b, where A are multiple symmetric positive definite matrices, using Cholesky."""
+#     L = _nmp.linalg.cholesky(A)
+#     X = _PARALLEL(_jbl.delayed(_lin.cho_solve)((L_, True), b_) for L_, b_ in zip(L, b))
+#
+#     #
+#     return _nmp.asarray(X)
+
+def chol_solve_many(A, b):
+    """Solve A * x = b, where A are multiple symmetric positive definite matrices, using Cholesky."""
+    L = _nmp.linalg.cholesky(A)
+    X = [_lin.cho_solve((L_, True), b_) for L_, b_ in zip(L, b)]
+
+    # return
+    return _nmp.asarray(X)
+
+
+def sample_multivariate_normal_many(b, A):
+    """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
+    z = _rnd.normal(size=b.shape)
+
+    L = _nmp.linalg.cholesky(A)
+    U = _nmp.transpose(L, axes=(0, 2, 1))
+
+    y = [_lin.solve_triangular(U_, z_) for U_, z_ in zip(U, z)]   # U * y = z
+
+    m = [_lin.solve_triangular(U_, b_, trans='T') for U_, b_ in zip(U, b)]   # U.T * m = b, where m = U * mu
+    mu = [_lin.solve_triangular(U_, m_) for U_, m_ in zip(U, m)]  # U * mu = mu_
+
+    # return
+    return _nmp.asarray(y) + _nmp.asarray(mu)
 
 
 def sample_multivariate_normal2(b, A):

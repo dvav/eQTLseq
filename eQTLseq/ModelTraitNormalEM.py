@@ -11,51 +11,37 @@ class ModelTraitNormalEM(object):
 
     def __init__(self, **args):
         """TODO."""
-        Y, G, n_iters, s2_lims = args['Y'], args['G'], args['n_iters'], args['s2_lims']
-
-        # standardize data
-        self.Y = Y - _nmp.mean(Y)
-        self.G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-
-        # used later in calculations
-        self.GTG = self.G.T.dot(self.G)
-        self.GTY = self.G.T.dot(self.Y)
-
-        # number of samples and genetic markers
-        n_samples, n_markers = self.G.shape
+        n_markers, n_iters = args['n_markers'], args['n_iters']
 
         # initial conditions
         self.tau = _rnd.rand()
         self.zeta = _rnd.rand(n_markers)
         self.beta = _rnd.normal(0, _nmp.ones(n_markers))
 
-        self._traces = _nmp.empty(n_iters + 1)
-        self._traces.fill(_nmp.nan)
-        self._traces[0] = 0
+        self._trace = _nmp.empty(n_iters + 1)
+        self._trace.fill(_nmp.nan)
+        self._trace[0] = 0
 
-        # other parameters
-        self.s2_min = s2_lims[0]
-        self.s2_max = s2_lims[1]
-
-    def update(self, itr):
+    def update(self, itr, **args):
         """TODO."""
+        Y, G, GTG, GTY, s2_lims = args['Y'], args['G'], args['GTG'], args['GTY'], args['s2_lims']
+
         # E step
         self.zeta = _update_zeta(self.beta, self.tau)
-        self.zeta = _nmp.clip(self.zeta, 1 / self.s2_max, 1 / self.s2_min)
+        self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
         # M step
-        self.beta, self.tau = _update_beta_tau(self.Y, self.G, self.GTG, self.GTY, self.zeta)
+        self.beta, self.tau = _update_beta_tau(Y, G, GTG, GTY, self.zeta)
 
         # update the rest
-        self._traces[itr] = _calculate_lower_bound(self.Y, self.G, self.beta, self.tau, self.zeta)
+        self._trace[itr] = _calculate_lower_bound(Y, G, self.beta, self.tau, self.zeta)
 
     @property
-    def traces(self):
+    def trace(self):
         """TODO."""
-        return self._traces
+        return self._trace
 
-    @property
-    def estimates(self):
+    def get_estimates(self, **args):
         """TODO."""
         return {'tau': self.tau, 'zeta': self.zeta, 'beta': self.beta}
 
@@ -68,7 +54,7 @@ def _update_beta_tau(Y, G, GTG, GTY, zeta):
     beta = _utils.chol_solve(A, GTY)
 
     # calculate tau
-    resid = Y - G.dot(beta)
+    resid = Y - (G * beta).sum(1)
     shape = 0.5 * (n_markers + n_samples)
     rate = 0.5 * _nmp.sum(resid ** 2) + 0.5 * _nmp.sum(beta ** 2 * zeta)
     tau = (shape - 1) / rate
@@ -92,7 +78,7 @@ def _calculate_lower_bound(Y, G, beta, tau, zeta):
     n_samples, n_markers = G.shape
 
     #
-    resid1 = Y - G.dot(beta)
+    resid1 = Y - (G * beta).sum(1)
     resid1 = (resid1**2).sum()
     resid2 = (beta**2 * zeta).sum()
     energy = (0.5 * n_samples + 0.5 * n_markers - 1) * _nmp.log(tau) - 0.5 * tau * (resid1 + resid2)
