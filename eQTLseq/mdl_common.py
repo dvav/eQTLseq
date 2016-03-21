@@ -6,55 +6,48 @@ import numpy.random as _rnd
 import eQTLseq.utils as _utils
 
 
-def sample_beta(GTG, GTY, tau, zeta):
+def sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples):
     """TODO."""
     _, n_markers = zeta.shape
-
-    # sample beta
-    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.identity(n_markers))
-    b = tau * GTY
-    beta = _utils.sample_multivariate_normal_many(b.T, A)
-
-    ##
-    return beta
-
-
-def sample_beta_tau(GTG, GTY, tau, zeta):
-    """TODO."""
-    _, n_markers = zeta.shape
-
-    # sample beta
-    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.identity(n_markers))
-    b = tau * GTY
-    beta = _utils.sample_multivariate_normal_many(b.T, A)
-
-    ##
-    return beta
-
-
-def sample_tau(Y, G, beta, zeta):
-    """TODO."""
-    n_samples, n_markers = G.shape
 
     # sample tau
-    resid = Y - _nmp.sum(G[:, None, :] * beta[None, :, :], -1)
     shape = 0.5 * (n_samples + n_markers)
-    rate = 0.5 * _nmp.sum(resid ** 2, 0) + 0.5 * _nmp.sum(beta ** 2 * zeta, 1)
+    rate = 0.5 * YTY
     tau = _rnd.gamma(shape, 1 / rate)
 
+    # sample beta
+    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
+    b = tau * GTY
+    beta = _utils.sample_multivariate_normal_many(b.T, A)
+    # beta = _nmp.asarray([_utils.sample_multivariate_normal(b_, A_) for b_, A_ in zip(b.T, A)])
+    # beta = _utils.sample_multivariate_normal2(b.T, A)
+
     ##
-    return tau
+    return beta, tau
 
 
-def sample_zeta(beta, tau):
+def sample_zeta(beta, tau, eta):
     """TODO."""
     # sample zeta
     shape = 0.5
-    rate = 0.5 * beta**2 * tau[:, None]
+    rate = 0.5 * eta * beta**2 * tau[:, None]
     zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
 
     ##
     return zeta
+
+
+def sample_eta(beta, tau, zeta):
+    """TODO."""
+    n_genes, _ = zeta.shape
+
+    # sample zeta
+    shape = 0.5 * n_genes
+    rate = 0.5 * (zeta * beta**2 * tau[:, None]).sum(0)
+    eta = _rnd.gamma(shape, 1 / rate)
+
+    ##
+    return eta
 
 ##
 

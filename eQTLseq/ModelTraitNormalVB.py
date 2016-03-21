@@ -25,8 +25,8 @@ class ModelTraitNormalVB(object):
 
     def update(self, itr, **args):
         """TODO."""
-        Y, G, YTY, GTG, GTY, n_samples, n_markers, s2_lims = args['Y'], args['G'], args['YTY'], args['GTG'], \
-            args['GTY'], args['n_samples'], args['n_markers'], args['s2_lims']
+        Y, G, YTY, GTG, GTY = args['Y'], args['G'], args['YTY'], args['GTG'], args['GTY']
+        n_samples, n_markers, s2_lims = args['n_samples'], args['n_markers'], args['s2_lims']
 
         # update beta, tau and zeta
         self.beta, self.tau = _update_beta_tau(YTY, GTG, GTY, self.zeta, n_samples, n_markers)
@@ -67,11 +67,12 @@ class ModelTraitNormalVB(object):
 
 
 def _update_beta_tau(YTY, GTG, GTY, zeta, n_samples, n_markers):
+    # update tau
     shape = 0.5 * (n_markers + n_samples)
     rate = 0.5 * YTY
     tau = shape / rate
 
-    # sample beta
+    # update beta
     A = GTG + _nmp.diag(zeta)
     beta = _utils.chol_solve(A, GTY)
 
@@ -80,7 +81,6 @@ def _update_beta_tau(YTY, GTG, GTY, zeta, n_samples, n_markers):
 
 
 def _update_zeta(beta, tau):
-    # sample tau_beta
     shape = 0.5
     # rate = 0.5 * tau * (beta**2 + beta_var)
     rate = 0.5 * tau * beta**2
@@ -91,12 +91,9 @@ def _update_zeta(beta, tau):
 
 
 def _calculate_joint_log_likelihood(Y, G, beta, tau, zeta):
-    # number of samples and markers
     n_samples, n_markers = G.shape
 
-    #
     resid = Y - (G * beta).sum(1)
-
     A = (0.5 * n_samples + 0.5 * n_markers - 1) * _nmp.log(tau)
     B = 0.5 * tau * (resid**2).sum()
     C = 0.5 * tau * (beta**2 * zeta).sum()

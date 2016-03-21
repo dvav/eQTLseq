@@ -18,8 +18,6 @@ class ModelTraitNormalGibbs(object):
         self.zeta = _rnd.rand(n_markers)
         self.beta = _rnd.normal(0, 1, size=n_markers)
 
-        self.idxs = _nmp.ones(n_markers, dtype='bool')
-
         self._trace = _nmp.empty(n_iters + 1)
         self._trace.fill(_nmp.nan)
         self._trace[0] = 0
@@ -31,26 +29,15 @@ class ModelTraitNormalGibbs(object):
     def update(self, itr, **args):
         """TODO."""
         Y, G, YTY, GTG, GTY = args['Y'], args['G'], args['YTY'], args['GTG'], args['GTY']
-        n_burnin, beta_thr = args['n_burnin'], args['beta_thr']
-        n_samples, _ = G.shape
-
-        self.idxs = _nmp.abs(self.beta) > beta_thr
-
-        G = G[:, self.idxs]
-        GTY = GTY[self.idxs]
-        GTG = GTG[:, self.idxs][self.idxs, :]
-
-        zeta = self.zeta[self.idxs]
+        n_burnin, n_samples, n_markers = args['n_burnin'], args['n_samples'], args['n_markers']
+        s2_lims = args['s2_lims']
 
         # sample beta, tau and zeta
-        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, n_samples)
-        zeta = _sample_zeta(beta, tau)
+        self.beta, self.tau = _sample_beta_tau(YTY, GTG, GTY, self.zeta, n_samples, n_markers)
+        self.zeta = _sample_zeta(self.beta, self.tau)
+        self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        self._trace[itr] = _calculate_joint_log_likelihood(Y, G, beta, tau, zeta)
-
-        self.beta[self.idxs] = beta
-        self.zeta[self.idxs] = zeta
-        self.tau = tau
+        self._trace[itr] = _calculate_joint_log_likelihood(Y, G, self.beta, self.tau, self.zeta)
 
         if(itr > n_burnin):
             self.tau_sum += self.tau
@@ -82,9 +69,7 @@ class ModelTraitNormalGibbs(object):
         }
 
 
-def _sample_beta_tau(YTY, GTG, GTY, zeta, n_samples):
-    n_markers = zeta.shape[0]
-
+def _sample_beta_tau(YTY, GTG, GTY, zeta, n_samples, n_markers):
     # sample tau
     shape = 0.5 * (n_markers + n_samples)
     rate = 0.5 * YTY
@@ -103,7 +88,7 @@ def _sample_zeta(beta, tau):
     # sample tau_beta
     shape = 0.5
     rate = 0.5 * beta**2 * tau
-    zeta = _rnd.gamma(shape, 1 / rate)
+    zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
 
     ##
     return zeta
@@ -119,4 +104,4 @@ def _calculate_joint_log_likelihood(Y, G, beta, tau, zeta):
     D = 0.5 * _nmp.log(zeta).sum()
 
     #
-    return (A - B - C - D) / n_markers
+    return A - B - C - D

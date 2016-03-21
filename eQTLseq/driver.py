@@ -13,8 +13,8 @@ from eQTLseq.ModelTraitNormalVB import ModelTraitNormalVB as _ModelTraitNormalVB
 import eQTLseq.utils as _utils
 
 
-def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, n_burnin=None, s2_lims=(1e-12, 1e12),
-        tol=1e-6):
+def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-6,
+        s2_lims=(1e-20, 1e6), tol=1e-6):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
     assert kind in ('eQTLs', 'Trait')
@@ -48,6 +48,7 @@ def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, 
         'n_genes': n_genes,
         'n_iters': n_iters,
         'n_burnin': n_burnin,
+        'beta_thr': beta_thr,
         's2_lims': s2_lims,
         'Y': Y,
         'G': G,
@@ -71,7 +72,7 @@ def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, 
     # loop
     itr, err, trace0 = 0, 1, mdl.trace[0]
     print('{} iterations (max):'.format(n_iters), end='')
-    while itr < n_iters and _nmp.any(err > tol):
+    while itr < n_iters and err > tol:
         itr = itr + 1
         mdl.update(itr, **args)
 
@@ -79,7 +80,7 @@ def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, 
         err = _nmp.abs(trace1 - trace0)
         trace0 = trace1
 
-        # print('Iteration {0} of {1}'.format(itr, n_iters), end='\b')
+        # print('Iteration {0} of {1}'.format(itr, n_iters), end='\r')
         print('.', end='')
     print('Done!')
 

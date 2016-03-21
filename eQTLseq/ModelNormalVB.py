@@ -4,7 +4,7 @@ import numpy as _nmp
 import numpy.random as _rnd
 
 import eQTLseq.mdl_common as _common
-import eQTLseq.utils as _utils
+# import eQTLseq.utils as _utils
 
 
 class ModelNormalVB(object):

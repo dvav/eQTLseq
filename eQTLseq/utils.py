@@ -37,6 +37,19 @@ def sample_multivariate_normal(b, A):
     return y + mu
 
 
+def sample_multivariate_normal_(b, A):
+    """Sample from the multivariate normal distribution with precision matrix A and mu = A^-1 b."""
+    z = _rnd.normal(size=b.shape)
+
+    Q, D, _ = _nmp.linalg.svd(A)
+    S = 1 / D
+
+    mu = Q.dot(_nmp.diag(S)).dot(Q.T).dot(b)
+    y = Q.dot(_nmp.diag(_nmp.sqrt(S))).dot(z)
+
+    # return
+    return y + mu
+
 # _PARALLEL = _jbl.Parallel(n_jobs=8, backend='threading')
 #
 #
@@ -73,6 +86,19 @@ def sample_multivariate_normal_many(b, A):
     return _nmp.asarray(y) + _nmp.asarray(mu)
 
 
+def sample_multivariate_normal_many2(b, A):
+    """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
+    z = _rnd.normal(size=b.shape)
+
+    Q, D, _ = _nmp.linalg.svd(A)
+
+    mu = [Q_.dot(_nmp.diag(1/D_)).dot(Q_.T).dot(b_) for Q_, D_, b_ in zip(Q, D, b)]
+    y = [Q_.dot(_nmp.diag(_nmp.sqrt(1/D_))).dot(z_) for Q_, D_, z_ in zip(Q, D, z)]
+
+    # return
+    return _nmp.asarray(y) + _nmp.asarray(mu)
+
+
 def sample_multivariate_normal2(b, A):
     """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
     z = _rnd.normal(size=b.shape)
@@ -82,8 +108,8 @@ def sample_multivariate_normal2(b, A):
 
     y = _nmp.linalg.solve(U, z)  # U * y = z
 
-    mu_ = _nmp.linalg.solve(L, b)  # U.T * mu_ = b, where mu_ = U * mu
-    mu = _nmp.linalg.solve(U, mu_)  # U * mu = mu_
+    # mu_ = _nmp.linalg.solve(L, b)  # U.T * mu_ = b, where mu_ = U * mu
+    mu = _nmp.linalg.solve(A, b)  # U * mu = mu_
 
     # return
     return y + mu
