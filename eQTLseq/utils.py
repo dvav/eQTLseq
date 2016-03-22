@@ -1,5 +1,7 @@
 """Implements various utility functions."""
 
+import sys as _sys
+
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.linalg as _lin
@@ -83,7 +85,8 @@ def fit_nbinom_model(read_counts, normalised=False):
             alpha[i] = tmp[0]
             converged[i] = tmp[1].converged
 
-        print('Fitting gene {0} of {1}'.format(i, n_genes), end='\r')
+        print('\rFitting gene {0} of {1}'.format(i, n_genes), end='', file=_sys.stderr)
+    print('', file=_sys.stderr)
 
     #
     return {

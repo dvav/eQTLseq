@@ -107,12 +107,12 @@ class ModelNormalGibbs(object):
         #
         resid = Y - G.dot(beta.T)
 
-        A = - 0.5 * (_nmp.log(zeta) + _nmp.log(eta))
-        B = - 0.5 * tau * resid**2
-        C = - 0.5 * tau[:, None] * eta * zeta * beta**2
+        A = -0.5 * (tau * resid**2 - _nmp.log(tau)).sum()
+        B = -0.5 * (tau[:, None] * zeta * eta * beta**2 - _nmp.log(tau[:, None]) - _nmp.log(eta) - _nmp.log(zeta)).sum()
+        C = -_nmp.log(tau).sum() - _nmp.log(zeta).sum() - _nmp.log(eta).sum()
 
         #
-        return _nmp.sum(A + B + C)
+        return A + B + C
 
 
 def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples):

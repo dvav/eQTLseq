@@ -1,5 +1,7 @@
 """Implements run()."""
 
+import sys as _sys
+
 import numpy as _nmp
 
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
@@ -64,14 +66,13 @@ def run(Y, G, mdl='Normal', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-
     loglik = _nmp.empty(n_iters + 1)
     loglik.fill(_nmp.nan)
     loglik[0] = 0
-    print('{} iterations (max):'.format(n_iters), end='')
     for itr in range(1, n_iters + 1):
         mdl.update(itr, **args)
         loglik[itr] = mdl.get_joint_log_likelihood(**args)
 
-        # print('Iteration {0} of {1}'.format(itr, n_iters), end='\r')
-        print('.', end='')
-    print('Done!')
+        print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
+
+    print('\nDone!', file=_sys.stderr)
 
     #
     return loglik, mdl.get_estimates(**args)
