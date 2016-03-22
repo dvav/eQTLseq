@@ -3,23 +3,16 @@
 import numpy as _nmp
 
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
+from eQTLseq.ModelNBinomGibbs2 import ModelNBinomGibbs2 as _ModelNBinomGibbs2
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
-from eQTLseq.ModelTraitNormalGibbs import ModelTraitNormalGibbs as _ModelTraitNormalGibbs
-
-from eQTLseq.ModelNormalVB import ModelNormalVB as _ModelNormalVB
-from eQTLseq.ModelTraitNormalEM import ModelTraitNormalEM as _ModelTraitNormalEM
-from eQTLseq.ModelTraitNormalVB import ModelTraitNormalVB as _ModelTraitNormalVB
 
 import eQTLseq.utils as _utils
 
 
-def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-6,
-        s2_lims=(1e-20, 1e6), tol=1e-6):
+def run(Y, G, mdl='Normal', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
-    assert kind in ('eQTLs', 'Trait')
-    assert mdl in ('Normal', 'NBinom')
-    assert alg in ('Gibbs', 'EM', 'VB')
+    assert mdl in ('Normal', 'NBinom', 'NBinom2')
 
     n_samples1 = Y.shape[0]
     n_genes = Y.shape[1] if _nmp.ndim(Y) == 2 else 1
@@ -28,11 +21,13 @@ def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, 
     assert n_samples1 == n_samples2
 
     # normalize data
-    if mdl == 'NBinom' and norm:
+    if mdl in ('NBinom', 'NBinom2') and norm:
         Y = _utils.normalise_RNAseq_data(Y.T)[0].T
 
     if mdl == 'Normal':
         Y = Y - _nmp.mean(Y, 0)
+    else:
+        Y = Y / _nmp.mean(Y, 0)
 
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
 
@@ -59,30 +54,24 @@ def run(Y, G, kind='eQTLs', mdl='Normal', alg='Gibbs', norm=True, n_iters=1000, 
 
     # prepare model
     Model = {
-        'eQTLs': {
-            'Normal': {'Gibbs': _ModelNormalGibbs, 'VB': _ModelNormalVB},
-            'NBinom': {'Gibbs': _ModelNBinomGibbs}
-        },
-        'Trait': {
-            'Normal': {'Gibbs': _ModelTraitNormalGibbs, 'EM': _ModelTraitNormalEM, 'VB': _ModelTraitNormalVB}
-        }
-    }[kind][mdl][alg]
+        'Normal': _ModelNormalGibbs,
+        'NBinom': _ModelNBinomGibbs,
+        'NBinom2': _ModelNBinomGibbs2
+    }[mdl]
     mdl = Model(**args)
 
     # loop
-    itr, err, trace0 = 0, 1, mdl.trace[0]
+    loglik = _nmp.empty(n_iters + 1)
+    loglik.fill(_nmp.nan)
+    loglik[0] = 0
     print('{} iterations (max):'.format(n_iters), end='')
-    while itr < n_iters and err > tol:
-        itr = itr + 1
+    for itr in range(1, n_iters + 1):
         mdl.update(itr, **args)
-
-        trace1 = mdl.trace[itr]
-        err = _nmp.abs(trace1 - trace0)
-        trace0 = trace1
+        loglik[itr] = mdl.get_joint_log_likelihood(**args)
 
         # print('Iteration {0} of {1}'.format(itr, n_iters), end='\r')
         print('.', end='')
     print('Done!')
 
     #
-    return mdl.trace, mdl.get_estimates(**args)
+    return loglik, mdl.get_estimates(**args)

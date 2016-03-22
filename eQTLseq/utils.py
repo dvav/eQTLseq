@@ -1,7 +1,5 @@
 """Implements various utility functions."""
 
-import joblib as _jbl
-
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.linalg as _lin
@@ -9,65 +7,14 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 
 
-def norm(x):
-    """Calculate euclidean norm of x."""
-    return _nmp.sqrt(_nmp.sum(x**2))
-
-
-def chol_solve(A, b):
-    """Solve A * x = b, where A is symmetric positive definite, using the Cholesky factorisation of A."""
-    a = _lin.cho_factor(A)
-    x = _lin.cho_solve(a, b)
-
-    # return
-    return x
-
-
-def sample_multivariate_normal(b, A):
-    """Sample from the multivariate normal distribution with precision matrix A and mu = A^-1 b."""
-    z = _rnd.normal(size=b.shape)
-
-    U = _lin.cholesky(A)
+def sample_multivariate_normal_one(U, b, z):
+    """TODO."""
     y = _lin.solve_triangular(U, z)  # U * y = z
-
     mu_ = _lin.solve_triangular(U, b, trans='T')  # U.T * mu_ = b, where mu_ = U * mu
     mu = _lin.solve_triangular(U, mu_)  # U * mu = mu_
 
-    # return
+    #
     return y + mu
-
-
-def sample_multivariate_normal_(b, A):
-    """Sample from the multivariate normal distribution with precision matrix A and mu = A^-1 b."""
-    z = _rnd.normal(size=b.shape)
-
-    Q, D, _ = _nmp.linalg.svd(A)
-    S = 1 / D
-
-    mu = Q.dot(_nmp.diag(S)).dot(Q.T).dot(b)
-    y = Q.dot(_nmp.diag(_nmp.sqrt(S))).dot(z)
-
-    # return
-    return y + mu
-
-# _PARALLEL = _jbl.Parallel(n_jobs=8, backend='threading')
-#
-#
-# def chol_solve_many(A, b):
-#     """Solve A * x = b, where A are multiple symmetric positive definite matrices, using Cholesky."""
-#     L = _nmp.linalg.cholesky(A)
-#     X = _PARALLEL(_jbl.delayed(_lin.cho_solve)((L_, True), b_) for L_, b_ in zip(L, b))
-#
-#     #
-#     return _nmp.asarray(X)
-
-def chol_solve_many(A, b):
-    """Solve A * x = b, where A are multiple symmetric positive definite matrices, using Cholesky."""
-    L = _nmp.linalg.cholesky(A)
-    X = [_lin.cho_solve((L_, True), b_) for L_, b_ in zip(L, b)]
-
-    # return
-    return _nmp.asarray(X)
 
 
 def sample_multivariate_normal_many(b, A):
@@ -77,42 +24,10 @@ def sample_multivariate_normal_many(b, A):
     L = _nmp.linalg.cholesky(A)
     U = _nmp.transpose(L, axes=(0, 2, 1))
 
-    y = [_lin.solve_triangular(U_, z_) for U_, z_ in zip(U, z)]   # U * y = z
-
-    m = [_lin.solve_triangular(U_, b_, trans='T') for U_, b_ in zip(U, b)]   # U.T * m = b, where m = U * mu
-    mu = [_lin.solve_triangular(U_, m_) for U_, m_ in zip(U, m)]  # U * mu = mu_
+    y = [sample_multivariate_normal_one(U_, b_, z_) for U_, b_, z_ in zip(U, b, z)]
 
     # return
-    return _nmp.asarray(y) + _nmp.asarray(mu)
-
-
-def sample_multivariate_normal_many2(b, A):
-    """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
-    z = _rnd.normal(size=b.shape)
-
-    Q, D, _ = _nmp.linalg.svd(A)
-
-    mu = [Q_.dot(_nmp.diag(1/D_)).dot(Q_.T).dot(b_) for Q_, D_, b_ in zip(Q, D, b)]
-    y = [Q_.dot(_nmp.diag(_nmp.sqrt(1/D_))).dot(z_) for Q_, D_, z_ in zip(Q, D, z)]
-
-    # return
-    return _nmp.asarray(y) + _nmp.asarray(mu)
-
-
-def sample_multivariate_normal2(b, A):
-    """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
-    z = _rnd.normal(size=b.shape)
-
-    L = _nmp.linalg.cholesky(A)
-    U = _nmp.transpose(L, axes=(0, 2, 1))
-
-    y = _nmp.linalg.solve(U, z)  # U * y = z
-
-    # mu_ = _nmp.linalg.solve(L, b)  # U.T * mu_ = b, where mu_ = U * mu
-    mu = _nmp.linalg.solve(A, b)  # U * mu = mu_
-
-    # return
-    return y + mu
+    return _nmp.asarray(y)
 
 
 def sample_nbinom(mu, phi, size=None):

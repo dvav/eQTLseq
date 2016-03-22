@@ -19,53 +19,21 @@ def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_phenotypes(G, mu=None, phi=None, kind='Trait', mdl='Normal', n_markers_causal=2, n_genes=100,
-                        n_genes_affected=10, s2e=1, h2=0.5):
+def simulate_phenotypes(G, mu=None, phi=None, mdl='Normal', n_markers_causal=2, n_genes=100, n_genes_affected=10,
+                        s2e=1, h2=0.5):
     """Simulate eQTLs or single traits."""
     args = locals()
 
-    assert kind in ('eQTLs', 'Trait')
     assert mdl in ('NBinom', 'Normal')
 
     #
     fcn = {
-        'eQTLs': {
-            'Normal': _simulate_eQTLs_normal,
-            'NBinom': _simulate_eQTLs_nbinom
-        },
-        'Trait': {
-            'Normal': _simulate_trait_normal
-        }
-    }[kind][mdl]
+        'Normal': _simulate_eQTLs_normal,
+        'NBinom': _simulate_eQTLs_nbinom
+    }[mdl]
 
     #
     return fcn(**args)
-
-
-def _simulate_trait_normal(**args):
-    """Simulate a quantitative, normally distributed trait."""
-    G = args['G']
-    n_markers_causal = args['n_markers_causal']
-    s2e = args['s2e']
-    h2 = args['h2']
-
-    n_samples, n_markers = G.shape
-    assert n_markers >= n_markers_causal
-
-    # sample causal markers
-    idxs_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
-
-    # compute causal coefficients
-    s2g = h2 * s2e / (1 - h2)
-    coefs = _nmp.zeros(n_markers)
-    coefs[idxs_causal] = _rnd.normal(0, _nmp.sqrt(s2g / n_markers_causal), n_markers_causal)
-
-    # compute phenotype
-    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-    Y = _rnd.normal(G.dot(coefs), _nmp.sqrt(s2e))
-
-    #
-    return {'Y': Y, 'coefs': coefs}
 
 
 def _simulate_eQTLs_normal(**args):
@@ -103,40 +71,58 @@ def _simulate_eQTLs_normal(**args):
 
 def _simulate_eQTLs_nbinom(**args):
     """Simulate eQTLs with normally distributed gene expression data."""
-    G = args['G']
     mu = args['mu']
     phi = args['phi']
-    n_markers_causal = args['n_markers_causal']
-    n_genes = args['n_genes']
-    n_genes_affected = args['n_genes_affected']
-    h2 = args['h2']
 
-    n_samples, n_markers = G.shape
-    n_genes = phi.size if n_genes is None else n_genes
+    args['n_genes'] = phi.size if args['n_genes'] is None else args['n_genes']
+    assert args['n_genes'] <= phi.size
 
-    assert n_markers >= n_markers_causal
-    assert n_genes <= phi.size
-    assert n_genes >= n_genes_affected
-
-    idxs = _rnd.choice(phi.size, n_genes, replace=False)
+    idxs = _rnd.choice(phi.size, args['n_genes'], replace=False)
     mu, phi = mu[idxs], phi[idxs]
 
-    # sample causal markers and affected genes
-    idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
-    idxs_genes_affected = _nmp.hstack([
-        _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
-    ])
-
-    # compute causal coefficients
-    s2e = 1  # mu[idxs_genes_affected] + mu[idxs_genes_affected]**2 / phi[idxs_genes_affected]
-    s2g = h2 * s2e / (1 - h2)
-    coefs = _nmp.zeros((n_genes, n_markers))
-    coefs[idxs_genes_affected, idxs_markers_causal] = \
-        _rnd.normal(0, _nmp.sqrt(s2g / n_markers_causal), (n_genes_affected, n_markers_causal))
-
     # compute phenotype
-    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-    Y = _utils.sample_nbinom(mu * _nmp.exp(G.dot(coefs.T)), phi)
+    res = _simulate_eQTLs_normal(**args)
+    Z = _utils.sample_nbinom(mu * _nmp.exp(res['Y']), phi)
 
     #
-    return {'Y': Y, 'coefs': coefs, 'mu': mu, 'phi': phi}
+    return {'Z': Z, 'coefs': res['coefs'], 'mu': mu, 'phi': phi}
+
+# def _simulate_eQTLs_nbinom(**args):
+#     """Simulate eQTLs with normally distributed gene expression data."""
+#     G = args['G']
+#     mu = args['mu']
+#     phi = args['phi']
+#     n_markers_causal = args['n_markers_causal']
+#     n_genes = args['n_genes']
+#     n_genes_affected = args['n_genes_affected']
+#     h2 = args['h2']
+#
+#     n_samples, n_markers = G.shape
+#     n_genes = phi.size if n_genes is None else n_genes
+#
+#     assert n_markers >= n_markers_causal
+#     assert n_genes <= phi.size
+#     assert n_genes >= n_genes_affected
+#
+#     idxs = _rnd.choice(phi.size, n_genes, replace=False)
+#     mu, phi = mu[idxs], phi[idxs]
+#
+#     # sample causal markers and affected genes
+#     idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
+#     idxs_genes_affected = _nmp.hstack([
+#         _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
+#     ])
+#
+#     # compute causal coefficients
+#     s2e = 1  # mu[idxs_genes_affected] + mu[idxs_genes_affected]**2 / phi[idxs_genes_affected]
+#     s2g = h2 * s2e / (1 - h2)
+#     coefs = _nmp.zeros((n_genes, n_markers))
+#     coefs[idxs_genes_affected, idxs_markers_causal] = \
+#         _rnd.normal(0, _nmp.sqrt(s2g / n_markers_causal), (n_genes_affected, n_markers_causal))
+#
+#     # compute phenotype
+#     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+#     Y = _utils.sample_nbinom(mu * _nmp.exp(G.dot(coefs.T)), phi)
+#
+#     #
+#     return {'Y': Y, 'coefs': coefs, 'mu': mu, 'phi': phi}

@@ -1,4 +1,4 @@
-"""Implements ModelNBinomGibbs."""
+"""Implements ModelNBinomGibbs2."""
 
 import numpy as _nmp
 import numpy.random as _rnd
@@ -7,7 +7,7 @@ import scipy.special as _spc
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
 
-class ModelNBinomGibbs(_ModelNormalGibbs):
+class ModelNBinomGibbs2(_ModelNormalGibbs):
     """A negative binomial model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -80,35 +80,30 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
         #
         log_phi = _nmp.log(self.phi)
         alpha = 1 / self.phi
-        pi = alpha / (alpha + _nmp.exp(self.Y))
+        pi = 1 / (1 + _nmp.exp(-self.Y))
 
         A = (0.5 * n_genes - 1) * _nmp.log(self.tau_phi) - log_phi.sum() \
             - 0.5 * self.tau_phi * ((log_phi - self.mu_phi)**2).sum()
-        B = _spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + (a + alpha - 1) * _nmp.log(pi) \
-            + (b + Z - 1) * _nmp.log1p(-pi)
+        B = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum()
         C = super().get_joint_log_likelihood(Y=self.Y, G=G)
 
         #
-        return (A + B + C).sum()
+        return A + B + C
 
 
 def _sample_phi_global(Z, phi, Y, mu_phi, tau_phi):
     n_samples, n_genes = Z.shape
+    pi = 1 / (1 + _nmp.exp(-Y))
 
     # sample proposals from the prior
-    means = _nmp.exp(Y)
     alpha = 1 / phi
-    pi = alpha / (alpha + means)
 
     phi_ = _nmp.exp(mu_phi + _rnd.randn(n_genes) / _nmp.sqrt(tau_phi))
     alpha_ = 1 / phi_
-    pi_ = alpha_ / (alpha_ + means)
 
     # compute loglik
-    loglik = _spc.gammaln(Z + alpha).sum(0) - n_samples * _spc.gammaln(alpha) \
-        + alpha * _nmp.log(pi).sum(0) + (Z * _nmp.log1p(-pi)).sum(0)
-    loglik_ = _spc.gammaln(Z + alpha_).sum(0) - n_samples * _spc.gammaln(alpha_) \
-        + alpha_ * _nmp.log(pi_).sum(0) + (Z * _nmp.log1p(-pi_)).sum(0)
+    loglik = _spc.gammaln(Z + alpha).sum(0) - n_samples * _spc.gammaln(alpha) + alpha * _nmp.log(pi).sum(0)
+    loglik_ = _spc.gammaln(Z + alpha_).sum(0) - n_samples * _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi).sum(0)
 
     # Metropolis step
     idxs = _rnd.rand(n_genes) < _nmp.exp(loglik_ - loglik)
@@ -120,24 +115,20 @@ def _sample_phi_global(Z, phi, Y, mu_phi, tau_phi):
 
 def _sample_phi_local(Z, phi, Y, mu_phi, tau_phi, scale=0.01):
     n_samples, n_genes = Z.shape
+    pi = 1 / (1 + _nmp.exp(-Y))
 
     # sample proposals from a log-normal with small scale
-    means = _nmp.exp(Y)
     alpha = 1 / phi
-    pi = alpha / (alpha + means)
     log_phi = _nmp.log(phi)
 
     phi_ = phi * _nmp.exp(scale * _rnd.randn(n_genes))
     alpha_ = 1 / phi_
-    pi_ = alpha_ / (alpha_ + means)
     log_phi_ = _nmp.log(phi_)
 
     # compute loglik
-    loglik = _spc.gammaln(Z + alpha).sum(0) - n_samples * _spc.gammaln(alpha) \
-        + alpha * _nmp.log(pi).sum(0) + (Z * _nmp.log1p(-pi)).sum(0) \
+    loglik = _spc.gammaln(Z + alpha).sum(0) - n_samples * _spc.gammaln(alpha) + alpha * _nmp.log(pi).sum(0) \
         - log_phi - 0.5 * tau_phi * (log_phi - mu_phi)**2
-    loglik_ = _spc.gammaln(Z + alpha_).sum(0) - n_samples * _spc.gammaln(alpha_) \
-        + alpha_ * _nmp.log(pi_).sum(0) + (Z * _nmp.log1p(-pi_)).sum(0) \
+    loglik_ = _spc.gammaln(Z + alpha_).sum(0) - n_samples * _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi).sum(0) \
         - log_phi_ - 0.5 * tau_phi * (log_phi_ - mu_phi)**2
 
     # Metropolis step
@@ -172,10 +163,10 @@ def _sample_Y_global(Z, G, phi, Y, beta, tau):
     alpha = 1 / phi
 
     # sample proposals from a normal prior
-    pi = alpha / (alpha + _nmp.exp(Y))
+    pi = 1 / (1 + _nmp.exp(-Y))
 
     Y_ = _rnd.normal(G.dot(beta.T), 1 / _nmp.sqrt(tau))
-    pi_ = alpha / (alpha + _nmp.exp(Y_))
+    pi_ = 1 / (1 + _nmp.exp(-Y_))
 
     # compute loglik
     loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)
@@ -195,10 +186,10 @@ def _sample_Y_local(Z, G, phi, Y, beta, tau, scale=0.01):
     GBT = G.dot(beta.T)
 
     # sample proposals from a log-normal with small scale
-    pi = alpha / (alpha + _nmp.exp(Y))
+    pi = 1 / (1 + _nmp.exp(-Y))
 
     Y_ = Y * _nmp.exp(scale * _rnd.randn(n_samples, n_genes))
-    pi_ = alpha / (alpha + _nmp.exp(Y_))
+    pi_ = 1 / (1 + _nmp.exp(-Y_))
 
     # compute loglik
     loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi) - 0.5 * tau * (Y - GBT)**2

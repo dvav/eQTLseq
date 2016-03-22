@@ -3,7 +3,7 @@
 import numpy as _nmp
 import numpy.random as _rnd
 
-import eQTLseq.mdl_common as _common
+import eQTLseq.utils as _utils
 
 
 class ModelNormalGibbs(object):
@@ -11,7 +11,7 @@ class ModelNormalGibbs(object):
 
     def __init__(self, **args):
         """TODO."""
-        n_iters, n_genes, n_markers = args['n_iters'], args['n_genes'], args['n_markers']
+        n_genes, n_markers = args['n_genes'], args['n_markers']
 
         # initial conditions
         self.tau = _nmp.ones(n_genes)
@@ -22,10 +22,6 @@ class ModelNormalGibbs(object):
         self.idxs_markers = _nmp.ones(n_markers, dtype='bool')
         self.idxs_genes = _nmp.ones(n_genes, dtype='bool')
 
-        self._trace = _nmp.empty(n_iters + 1)
-        self._trace.fill(_nmp.nan)
-        self._trace[0] = 0
-
         self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
         self.eta_sum, self.eta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
@@ -33,17 +29,15 @@ class ModelNormalGibbs(object):
 
     def update(self, itr, **args):
         """TODO."""
-        Y, G, YTY, GTG, GTY = args['Y'], args['G'], args['YTY'], args['GTG'], args['GTY']
-        n_burnin, beta_thr, s2_lims = args['n_burnin'], args['beta_thr'], args['s2_lims']
-        n_samples, _ = G.shape
+        YTY, GTG, GTY = args['YTY'], args['GTG'], args['GTY']
+        n_burnin, beta_thr, s2_lims, n_samples = args['n_burnin'], args['beta_thr'], args['s2_lims'], args['n_samples']
 
-        idxs = _nmp.abs(self.beta) > beta_thr
+        # identify irrelevant genes and markers and exclude them
+        idxs = (_nmp.abs(self.beta) > beta_thr) & (self.zeta * self.eta * self.tau[:, None] < 1 / s2_lims[0])
         idxs[[0, 1], [0, 1]] = True  # just a precaution
         self.idxs_markers = _nmp.any(idxs, 0)
         self.idxs_genes = _nmp.any(idxs, 1)
 
-        Y = Y[:, self.idxs_genes]
-        G = G[:, self.idxs_markers]
         YTY = YTY[self.idxs_genes]
         GTG = GTG[:, self.idxs_markers][self.idxs_markers, :]
         GTY = GTY[self.idxs_markers, :][:, self.idxs_genes]
@@ -52,16 +46,14 @@ class ModelNormalGibbs(object):
         eta = self.eta[self.idxs_markers]
 
         # sample beta, tau and zeta
-        beta, tau = _common.sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples)
+        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples)
+        tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        zeta = _common.sample_zeta(beta, tau, eta)
+        zeta = _sample_zeta(beta, tau, eta)
         zeta = _nmp.clip(zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        eta = _common.sample_eta(beta, tau, zeta)
+        eta = _sample_eta(beta, tau, zeta)
         eta = _nmp.clip(eta, 1 / s2_lims[1], 1 / s2_lims[0])
-
-        # update the rest
-        self._trace[itr] = _calculate_joint_log_likelihood(Y, G, beta, tau, zeta, eta)
 
         self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
         self.zeta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = zeta
@@ -78,11 +70,6 @@ class ModelNormalGibbs(object):
             self.zeta2_sum += self.zeta**2
             self.eta2_sum += self.eta**2
             self.beta2_sum += self.beta**2
-
-    @property
-    def trace(self):
-        """TODO."""
-        return self._trace
 
     def get_estimates(self, **args):
         """TODO."""
@@ -102,19 +89,69 @@ class ModelNormalGibbs(object):
             'beta': beta_mean, 'beta_var': beta_var
         }
 
+    def get_joint_log_likelihood(self, **args):
+        """TODO."""
+        Y, G = args['Y'], args['G']
 
-def _calculate_joint_log_likelihood(Y, G, beta, tau, zeta, eta):
-    # number of samples and markers
-    n_samples, n_genes = Y.shape
-    _, n_markers = G.shape
+        Y = Y[:, self.idxs_genes]
+        G = G[:, self.idxs_markers]
+        beta = self.beta[self.idxs_genes, :][:, self.idxs_markers]
+        zeta = self.zeta[self.idxs_genes, :][:, self.idxs_markers]
+        eta = self.eta[self.idxs_markers]
+        tau = self.tau[self.idxs_genes]
 
-    #
-    resid = Y - G.dot(beta.T)
+        # number of samples and markers
+        n_samples, n_markers = G.shape
+        _, n_genes = Y.shape
 
-    A = (0.5 * n_samples + 0.5 * n_markers - 1) * _nmp.log(tau).sum()
-    B = 0.5 * (tau * resid**2).sum()
-    C = 0.5 * (tau[:, None] * eta * beta**2 * zeta).sum()
-    D = 0.5 * _nmp.log(zeta).sum()
+        #
+        resid = Y - G.dot(beta.T)
 
-    #
-    return (A - B - C - D) / (n_markers * n_genes)
+        A = - 0.5 * (_nmp.log(zeta) + _nmp.log(eta))
+        B = - 0.5 * tau * resid**2
+        C = - 0.5 * tau[:, None] * eta * zeta * beta**2
+
+        #
+        return _nmp.sum(A + B + C)
+
+
+def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples):
+    """TODO."""
+    _, n_markers = zeta.shape
+
+    # sample tau
+    shape = 0.5 * (n_samples + n_markers)
+    rate = 0.5 * YTY
+    tau = _rnd.gamma(shape, 1 / rate)
+
+    # sample beta
+    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
+    b = tau * GTY
+    beta = _utils.sample_multivariate_normal_many(b.T, A)
+
+    ##
+    return beta, tau
+
+
+def _sample_zeta(beta, tau, eta):
+    """TODO."""
+    # sample zeta
+    shape = 0.5
+    rate = 0.5 * eta * beta**2 * tau[:, None]
+    zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
+
+    ##
+    return zeta
+
+
+def _sample_eta(beta, tau, zeta):
+    """TODO."""
+    n_genes, _ = zeta.shape
+
+    # sample zeta
+    shape = 0.5 * n_genes
+    rate = 0.5 * (zeta * beta**2 * tau[:, None]).sum(0)
+    eta = _rnd.gamma(shape, 1 / rate)
+
+    ##
+    return eta
