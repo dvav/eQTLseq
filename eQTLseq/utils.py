@@ -58,7 +58,7 @@ def normalise_RNAseq_data(read_counts, locfcn=_nmp.median):
     norm_factors = _nmp.exp(locfcn(logcounts, 0))
 
     #
-    return read_counts / norm_factors, norm_factors
+    return norm_factors
 
 
 def fit_nbinom_model(read_counts, normalised=False):
@@ -71,7 +71,7 @@ def fit_nbinom_model(read_counts, normalised=False):
             - n_samples * _nmp.log(ymean + alpha)
 
     # iterate over genes and fit across samples
-    ydata = read_counts if normalised else normalise_RNAseq_data(read_counts)[0]
+    ydata = read_counts if normalised else read_counts / normalise_RNAseq_data(read_counts)
     ymean = _nmp.mean(ydata, 1)
     alpha = _nmp.zeros(n_genes)
     converged = _nmp.zeros(n_genes, dtype=bool)

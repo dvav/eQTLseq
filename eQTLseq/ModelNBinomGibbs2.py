@@ -1,57 +1,113 @@
-"""Implements ModelNBinomGibbs2."""
+"""Implements ModelNBinomGibbs."""
 
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.special as _spc
 
-from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
+import eQTLseq.utils as _utils
 
 
-class ModelNBinomGibbs2(_ModelNormalGibbs):
+class ModelNBinomGibbs2(object):
     """A negative binomial model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
         """TODO."""
-        Z, n_markers = args['Y'], args['n_markers']
+        Z, n_markers = args['Z'], args['n_markers']
         n_samples, n_genes = Z.shape
 
-        super().__init__(n_genes=n_genes, n_markers=n_markers)
-
         # initial conditions
-        self.mu_phi, self.tau_phi, self.phi = 0, 1, _nmp.exp(_rnd.randn(n_genes))
+        self.mu_phi, self.tau_phi, self.phi, self.mu = 0, 1, _nmp.exp(_rnd.randn(n_genes)), _nmp.mean(Z, 0)
+
         self.Y = _rnd.randn(n_samples, n_genes)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
+
+        self.tau = _nmp.ones(n_genes)
+        self.eta = _nmp.ones(n_markers)
+        self.zeta = _nmp.ones((n_genes, n_markers))
+        self.beta = _rnd.randn(n_genes, n_markers)
+
+        self.idxs_markers = _nmp.ones(n_markers, dtype='bool')
+        self.idxs_genes = _nmp.ones(n_genes, dtype='bool')
 
         self.phi_sum, self.phi2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
+        self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
+        self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
+        self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
+        self.eta_sum, self.eta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
+        self.beta_sum, self.beta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G, GTG, n_burnin, beta_thr, s2_lims, n_samples = args['Y'], args['G'], args['GTG'], args['n_burnin'], \
-            args['beta_thr'], args['s2_lims'], args['n_samples']
+        Z, G, GTG, norm_factors, n_burnin, beta_thr, s2_lims, n_samples = args['Z'], args['G'], args['GTG'], \
+            args['norm_factors'], args['n_burnin'], args['beta_thr'], args['s2_lims'], args['n_samples']
 
-        # update beta, tau, zeta and eta
-        YTY = _nmp.sum(self.Y**2, 0)
-        GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY,
-                       n_burnin=n_burnin, beta_thr=beta_thr, s2_lims=s2_lims, n_samples=n_samples)
-
-        # sample phi
-        if(_rnd.rand() < 0.5):
-            self.phi = _sample_phi_local(Z, self.phi, self.Y, self.mu_phi, self.tau_phi)
+        # sample mu and phi
+        # self.mu = args['mu']
+        # self.phi = args['phi']
+        self.mu = _sample_mu(Z, norm_factors, self.phi, self.Y)
+        if _rnd.rand() < 0.5:
+            self.phi = _sample_phi_local(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau, self.zeta, self.eta, self.mu_phi, self.tau_phi)
         else:
-            self.phi = _sample_phi_global(Z, self.phi, self.Y, self.mu_phi, self.tau_phi)
+            self.phi = _sample_phi_global(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau, self.zeta, self.eta, self.mu_phi, self.tau_phi)
 
         # sample Y
-        if(_rnd.rand() < 0.5):
-            self.Y = _sample_Y_local(Z, G, self.phi, self.Y, self.beta, self.tau)
+        # self.Y = args['YY']
+        if _rnd.rand() < 0.5:
+            self.Y = _sample_Y_local(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
         else:
-            self.Y = _sample_Y_global(Z, G, self.phi, self.Y, self.beta, self.tau)
+            self.Y = _sample_Y_global(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
+
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # sample mu_phi and tau_phi
         self.mu_phi, self.tau_phi = _sample_mu_tau_phi(self.phi)
 
+        # update beta, tau, zeta and eta
+        YTY = _nmp.sum(self.Y**2, 0)
+        GTY = G.T.dot(self.Y)
+
+        idxs = (_nmp.abs(self.beta) > beta_thr) & (self.zeta * self.eta * self.tau[:, None] < 1 / s2_lims[0])
+        idxs[[0, 1], [0, 1]] = True  # just a precaution
+        self.idxs_markers = _nmp.any(idxs, 0)
+        self.idxs_genes = _nmp.any(idxs, 1)
+
+        YTY = YTY[self.idxs_genes]
+        GTG = GTG[:, self.idxs_markers][self.idxs_markers, :]
+        GTY = GTY[self.idxs_markers, :][:, self.idxs_genes]
+
+        phi = self.phi[self.idxs_genes]
+        zeta = self.zeta[self.idxs_genes, :][:, self.idxs_markers]
+        eta = self.eta[self.idxs_markers]
+
+        # sample beta, tau and zeta
+        beta, tau = _sample_beta_tau(YTY, GTG, GTY, phi, zeta, eta, n_samples)
+        tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
+
+        zeta = _sample_zeta(beta, phi, tau, eta)
+        zeta = _nmp.clip(zeta, 1 / s2_lims[1], 1 / s2_lims[0])
+
+        eta = _sample_eta(beta, phi, tau, zeta)
+        eta = _nmp.clip(eta, 1 / s2_lims[1], 1 / s2_lims[0])
+
+        self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
+        self.zeta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = zeta
+        self.tau[self.idxs_genes] = tau
+        self.eta[self.idxs_markers] = eta
+
         if(itr > n_burnin):
             self.phi_sum += self.phi
+            self.tau_sum += self.tau
+            self.zeta_sum += self.zeta
+            self.eta_sum += self.eta
+            self.beta_sum += self.beta
+            self.mu_sum += self.mu
+
             self.phi2_sum += self.phi**2
+            self.mu2_sum += self.mu**2
+            self.tau2_sum += self.tau**2
+            self.zeta2_sum += self.zeta**2
+            self.eta2_sum += self.eta**2
+            self.beta2_sum += self.beta**2
 
     def get_estimates(self, **args):
         """TODO."""
@@ -59,77 +115,110 @@ class ModelNBinomGibbs2(_ModelNormalGibbs):
 
         #
         N = n_iters - n_burnin
-        phi_mean = self.phi_sum / N
-        phi_var = self.phi2_sum / N - phi_mean**2
+        phi_mean, mu_mean = self.phi_sum / N, self.mu_sum / N
+        phi_var, mu_var = self.phi2_sum / N - phi_mean**2, self.mu2_sum / N - mu_mean**2
 
-        extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
+        tau_mean, zeta_mean, eta_mean, beta_mean = self.tau_sum / N, self.zeta_sum / N, self.eta_sum / N, \
+            self.beta_sum / N
+        tau_var, zeta_var, eta_var, beta_var = self.tau2_sum / N - tau_mean**2, self.zeta2_sum / N - zeta_mean**2, \
+            self.eta2_sum / N - eta_mean**2, self.beta2_sum / N - beta_mean**2
 
-        return dict(
-            phi=phi_mean, phi_var=phi_var,
-            **extra
-        )
+        return {
+            'phi': phi_mean, 'phi_var': phi_var,
+            'mu': mu_mean, 'mu_var': mu_var,
+            'tau': tau_mean, 'tau_var': tau_var,
+            'zeta': zeta_mean, 'zeta_var': zeta_var,
+            'eta': eta_mean, 'eta_var': eta_var,
+            'beta': beta_mean, 'beta_var': beta_var
+        }
 
-    def get_joint_log_likelihood(self, a=0.5, b=0.5, **args):
+    def get_log_likelihood(self, **args):
         """TODO."""
-        Z, G = args['Y'], args['G']
-
-        # number of samples and markers
-        n_samples, n_markers = G.shape
-        _, n_genes = Z.shape
+        Z, c = args['Z'], args['norm_factors']
 
         #
-        log_phi = _nmp.log(self.phi)
         alpha = 1 / self.phi
-        pi = 1 / (1 + _nmp.exp(-self.Y))
+        pi = alpha / (alpha + c[:, None] * self.mu * _nmp.exp(self.Y))
 
-        A = (0.5 * n_genes - 1) * _nmp.log(self.tau_phi) - log_phi.sum() \
-            - 0.5 * self.tau_phi * ((log_phi - self.mu_phi)**2).sum()
-        B = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum()
-        C = super().get_joint_log_likelihood(Y=self.Y, G=G)
+        loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum()
 
         #
-        return A + B + C
+        return loglik
 
 
-def _sample_phi_global(Z, phi, Y, mu_phi, tau_phi):
+def _sample_phi_local(Z, G, c, mu, phi, Y, beta, tau, zeta, eta, mu_phi, tau_phi, scale=0.01):
     n_samples, n_genes = Z.shape
-    pi = 1 / (1 + _nmp.exp(-Y))
+    means = c[:, None] * mu * _nmp.exp(Y)
+    resid2 = Y - G.dot(beta.T)
+    resid2 = resid2**2
+    log_tau = _nmp.log(tau)
+    log_zeta = _nmp.log(zeta)
+    log_eta = _nmp.log(eta)
 
     # sample proposals from the prior
     alpha = 1 / phi
-
-    phi_ = _nmp.exp(mu_phi + _rnd.randn(n_genes) / _nmp.sqrt(tau_phi))
-    alpha_ = 1 / phi_
-
-    # compute loglik
-    loglik = _spc.gammaln(Z + alpha).sum(0) - n_samples * _spc.gammaln(alpha) + alpha * _nmp.log(pi).sum(0)
-    loglik_ = _spc.gammaln(Z + alpha_).sum(0) - n_samples * _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi).sum(0)
-
-    # Metropolis step
-    idxs = _rnd.rand(n_genes) < _nmp.exp(loglik_ - loglik)
-    phi[idxs] = phi_[idxs]
-
-    #
-    return phi
-
-
-def _sample_phi_local(Z, phi, Y, mu_phi, tau_phi, scale=0.01):
-    n_samples, n_genes = Z.shape
-    pi = 1 / (1 + _nmp.exp(-Y))
-
-    # sample proposals from a log-normal with small scale
-    alpha = 1 / phi
     log_phi = _nmp.log(phi)
+    pi = alpha / (alpha + means)
 
     phi_ = phi * _nmp.exp(scale * _rnd.randn(n_genes))
     alpha_ = 1 / phi_
     log_phi_ = _nmp.log(phi_)
+    pi_ = alpha_ / (alpha_ + means)
+
+    # compute logpost
+    A = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum(0)
+    B = 0.5 * ((log_tau - log_phi - tau / phi * resid2)).sum(0)
+    C = 0.5 * ((log_tau[:, None] + log_zeta + log_eta - log_phi[:, None] - (log_tau[:, None] * log_zeta * log_eta) / log_phi[:, None] * beta**2)).sum(1)
+    loglik = A + B + C
+
+    A = (_spc.gammaln(Z + alpha_) - _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)).sum(0)
+    B = 0.5 * ((log_tau - log_phi_ - tau / phi_ * resid2)).sum(0)
+    C = 0.5 * ((log_tau[:, None] + log_zeta + log_eta - log_phi_[:, None] - (log_tau[:, None] * log_zeta * log_eta) / log_phi_[:, None] * beta**2)).sum(1)
+    loglik_ = A + B + C
+
+    logprior = - log_phi - 0.5 * tau_phi * (log_phi - mu_phi)**2
+    logprior_ = - log_phi_ - 0.5 * tau_phi * (log_phi_ - mu_phi)**2
+
+    logpost = loglik + logprior
+    logpost_ = loglik_ + logprior_
+
+    # Metropolis step
+    idxs = _rnd.rand(n_genes) < _nmp.exp(logpost_ - logpost)
+    phi[idxs] = phi_[idxs]
+
+    #
+    return phi
+
+
+def _sample_phi_global(Z, G, c, mu, phi, Y, beta, tau, zeta, eta, mu_phi, tau_phi):
+    n_samples, n_genes = Z.shape
+    means = c[:, None] * mu * _nmp.exp(Y)
+    resid2 = Y - G.dot(beta.T)
+    resid2 = resid2**2
+    log_tau = _nmp.log(tau)
+    log_zeta = _nmp.log(zeta)
+    log_eta = _nmp.log(eta)
+
+    # sample proposals from the prior
+    alpha = 1 / phi
+    pi = alpha / (alpha + means)
+    log_phi = _nmp.log(phi)
+
+    phi_ = _nmp.exp(mu_phi + _rnd.randn(n_genes) / _nmp.sqrt(tau_phi))
+    alpha_ = 1 / phi_
+    pi_ = alpha_ / (alpha_ + means)
+    log_phi_ = _nmp.log(phi_)
 
     # compute loglik
-    loglik = _spc.gammaln(Z + alpha).sum(0) - n_samples * _spc.gammaln(alpha) + alpha * _nmp.log(pi).sum(0) \
-        - log_phi - 0.5 * tau_phi * (log_phi - mu_phi)**2
-    loglik_ = _spc.gammaln(Z + alpha_).sum(0) - n_samples * _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi).sum(0) \
-        - log_phi_ - 0.5 * tau_phi * (log_phi_ - mu_phi)**2
+    A = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum(0)
+    B = 0.5 * ((log_tau - log_phi - tau / phi * resid2)).sum(0)
+    C = 0.5 * ((log_tau[:, None] + log_zeta + log_eta - log_phi[:, None] - (log_tau[:, None] * log_zeta * log_eta) / log_phi[:, None] * beta**2)).sum(1)
+    loglik = A + B + C
+
+    A = (_spc.gammaln(Z + alpha_) - _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)).sum(0)
+    B = 0.5 * ((log_tau - log_phi_ - tau / phi_ * resid2)).sum(0)
+    C = 0.5 * ((log_tau[:, None] + log_zeta + log_eta - log_phi_[:, None] - (log_tau[:, None] * log_zeta * log_eta) / log_phi_[:, None] * beta**2)).sum(1)
+    loglik_ = A + B + C
 
     # Metropolis step
     idxs = _rnd.rand(n_genes) < _nmp.exp(loglik_ - loglik)
@@ -137,6 +226,73 @@ def _sample_phi_local(Z, phi, Y, mu_phi, tau_phi, scale=0.01):
 
     #
     return phi
+
+
+def _sample_mu(Z, c, phi, Y, a=0.5, b=0.5):
+    n_samples, _ = Z.shape
+
+    Z = Z / (_nmp.exp(Y) * c[:, None])
+    alpha = 1 / phi
+
+    c1 = a + n_samples * alpha
+    c2 = b + Z.sum(0)
+
+    pi = _rnd.beta(c1, c2)
+    mu = alpha * (1 - pi) / pi
+
+    #
+    return mu
+
+
+def _sample_Y_local(Z, G, c, mu, phi, Y, beta, tau, scale=0.01):
+    n_samples, n_genes = Z.shape
+    alpha = 1 / phi
+    GBT = G.dot(beta.T)
+
+    # sample proposals from a normal prior
+    pi = alpha / (alpha + c[:, None] * mu * _nmp.exp(Y))
+
+    Y_ = Y * _nmp.exp(scale * _rnd.randn(n_samples, n_genes))
+    pi_ = alpha / (alpha + c[:, None] * mu * _nmp.exp(Y_))
+
+    # compute loglik
+    loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)
+    loglik_ = alpha * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)
+
+    logprior = -0.5 * tau / phi * (Y - GBT)**2
+    logprior_ = -0.5 * tau / phi * (Y_ - GBT)**2
+
+    logpost = loglik + logprior
+    logpost_ = loglik_ + logprior_
+
+    # do Metropolis step
+    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(logpost_ - logpost)
+    Y[idxs] = Y_[idxs]
+
+    #
+    return Y
+
+
+def _sample_Y_global(Z, G, c, mu, phi, Y, beta, tau):
+    n_samples, n_genes = Z.shape
+    alpha = 1 / phi
+
+    # sample proposals from a normal prior
+    pi = alpha / (alpha + c[:, None] * mu * _nmp.exp(Y))
+
+    Y_ = _rnd.normal(G.dot(beta.T), _nmp.sqrt(phi / tau))
+    pi_ = alpha / (alpha + c[:, None] * mu * _nmp.exp(Y_))
+
+    # compute loglik
+    loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)
+    loglik_ = alpha * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)
+
+    # do Metropolis step
+    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(loglik_ - loglik)
+    Y[idxs] = Y_[idxs]
+
+    #
+    return Y
 
 
 def _sample_mu_tau_phi(phi):
@@ -158,46 +314,43 @@ def _sample_mu_tau_phi(phi):
     return mu_phi, tau_phi
 
 
-def _sample_Y_global(Z, G, phi, Y, beta, tau):
-    n_samples, n_genes = Z.shape
-    alpha = 1 / phi
+def _sample_beta_tau(YTY, GTG, GTY, phi, zeta, eta, n_samples):
+    """TODO."""
+    _, n_markers = zeta.shape
 
-    # sample proposals from a normal prior
-    pi = 1 / (1 + _nmp.exp(-Y))
+    # sample tau
+    shape = 0.5 * (n_samples + n_markers)
+    rate = 0.5 * YTY / phi
+    tau = _rnd.gamma(shape, 1 / rate)
 
-    Y_ = _rnd.normal(G.dot(beta.T), 1 / _nmp.sqrt(tau))
-    pi_ = 1 / (1 + _nmp.exp(-Y_))
+    # sample beta
+    A = tau[:, None, None] / phi[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
+    b = tau * GTY / phi
+    beta = _utils.sample_multivariate_normal_many(b.T, A)
 
-    # compute loglik
-    loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)
-    loglik_ = alpha * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)
-
-    # do Metropolis step
-    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(loglik_ - loglik)
-    Y[idxs] = Y_[idxs]
-
-    #
-    return Y
+    ##
+    return beta, tau
 
 
-def _sample_Y_local(Z, G, phi, Y, beta, tau, scale=0.01):
-    n_samples, n_genes = Z.shape
-    alpha = 1 / phi
-    GBT = G.dot(beta.T)
+def _sample_zeta(beta, phi, tau, eta):
+    """TODO."""
+    # sample zeta
+    shape = 0.5
+    rate = 0.5 * eta * beta**2 * tau[:, None] / phi[:, None]
+    zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
 
-    # sample proposals from a log-normal with small scale
-    pi = 1 / (1 + _nmp.exp(-Y))
+    ##
+    return zeta
 
-    Y_ = Y * _nmp.exp(scale * _rnd.randn(n_samples, n_genes))
-    pi_ = 1 / (1 + _nmp.exp(-Y_))
 
-    # compute loglik
-    loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi) - 0.5 * tau * (Y - GBT)**2
-    loglik_ = alpha * _nmp.log(pi_) + Z * _nmp.log1p(-pi_) - 0.5 * tau * (Y_ - GBT)**2
+def _sample_eta(beta, phi, tau, zeta):
+    """TODO."""
+    n_genes, _ = zeta.shape
 
-    # do Metropolis step
-    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(loglik_ - loglik)
-    Y[idxs] = Y_[idxs]
+    # sample zeta
+    shape = 0.5 * n_genes
+    rate = 0.5 * (zeta * beta**2 * tau[:, None] / phi[:, None]).sum(0)
+    eta = _rnd.gamma(shape, 1 / rate)
 
-    #
-    return Y
+    ##
+    return eta

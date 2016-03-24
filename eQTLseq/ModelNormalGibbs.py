@@ -89,30 +89,16 @@ class ModelNormalGibbs(object):
             'beta': beta_mean, 'beta_var': beta_var
         }
 
-    def get_joint_log_likelihood(self, **args):
+    def get_log_likelihood(self, **args):
         """TODO."""
         Y, G = args['Y'], args['G']
 
-        Y = Y[:, self.idxs_genes]
-        G = G[:, self.idxs_markers]
-        beta = self.beta[self.idxs_genes, :][:, self.idxs_markers]
-        zeta = self.zeta[self.idxs_genes, :][:, self.idxs_markers]
-        eta = self.eta[self.idxs_markers]
-        tau = self.tau[self.idxs_genes]
-
-        # number of samples and markers
-        n_samples, n_markers = G.shape
-        _, n_genes = Y.shape
+        #
+        resid = Y - G.dot(self.beta.T)
+        loglik = -0.5 * (self.tau * resid**2 - _nmp.log(self.tau)).sum()
 
         #
-        resid = Y - G.dot(beta.T)
-
-        A = -0.5 * (tau * resid**2 - _nmp.log(tau)).sum()
-        B = -0.5 * (tau[:, None] * zeta * eta * beta**2 - _nmp.log(tau[:, None]) - _nmp.log(eta) - _nmp.log(zeta)).sum()
-        C = -_nmp.log(tau).sum() - _nmp.log(zeta).sum() - _nmp.log(eta).sum()
-
-        #
-        return A + B + C
+        return loglik
 
 
 def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples):
