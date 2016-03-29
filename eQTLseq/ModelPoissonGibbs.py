@@ -29,7 +29,6 @@ class ModelPoissonGibbs(_ModelNormalStdGibbs):
         # sample mu
         # self.mu = args['mu']
         self.mu = _sample_mu(Z, norm_factors, self.Y)
-        # self.mu = _update_mu(Z, norm_factors, self.Y)
 
         # sample Y
         # self.Y = args['YY']
@@ -42,8 +41,7 @@ class ModelPoissonGibbs(_ModelNormalStdGibbs):
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY,
-                       n_burnin=n_burnin, beta_thr=beta_thr, s2_lims=s2_lims)
+        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=n_burnin, beta_thr=beta_thr, s2_lims=s2_lims)
 
         if(itr > n_burnin):
             self.mu_sum += self.mu
@@ -123,11 +121,3 @@ def _sample_Y_global(Z, G, c, mu, Y, beta):
 
     #
     return Y
-
-
-def _update_mu(Z, c, Y):
-    Z = Z / (_nmp.exp(Y) * c[:, None])
-    mu = _nmp.mean(Z, 0)
-
-    #
-    return mu

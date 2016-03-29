@@ -5,43 +5,35 @@ import sys as _sys
 import numpy as _nmp
 
 from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
-from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
-from eQTLseq.ModelNBinomGibbs2 import ModelNBinomGibbs2 as _ModelNBinomGibbs2
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
 import eQTLseq.utils as _utils
 
 
-def run(D, G, mdl='Normal', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6, mu=None, phi=None, YY=None):
+def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burnin=None,
+        beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
-    assert mdl in ('Normal', 'Poisson', 'Binom', 'NBinom', 'NBinom2')
+    assert mdl in ('Normal', 'Poisson', 'Binomial')
 
-    n_samples1 = D.shape[0]
-    n_genes = D.shape[1] if _nmp.ndim(D) == 2 else 1
+    n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
 
     assert n_samples1 == n_samples2
 
-    # normalize data
-    if mdl in ('NBinom', 'NBinom2', 'Poisson') and norm:
-        norm_factors = _utils.normalise_RNAseq_data(D.T)
-    else:
-        norm_factors = _nmp.ones(n_samples1)
-
+    # normalise and transform data
+    print('Preparing data...', file=_sys.stderr)
+    norm_factors = _utils.calculate_norm_factors(Z.T) if norm_factors is None else norm_factors
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
     GTG = G.T.dot(G)
 
     if mdl == 'Normal':
-        Z = None
-        lib_sizes = None
-        Y = D - _nmp.mean(D, 0)
+        Y = _utils.transform_data(Z, norm_factors, kind=trans) if trans is not None else Z
+        Y = Y - _nmp.mean(Y, 0)
         YTY = _nmp.sum(Y**2, 0)
         GTY = G.T.dot(Y)
     else:
-        Z = D
-        lib_sizes = Z.sum(1)
         Y = None
         YTY = None
         GTY = None
@@ -61,20 +53,15 @@ def run(D, G, mdl='Normal', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-
         'YTY': YTY,
         'GTG': GTG,
         'GTY': GTY,
-        'YY': YY,
-        'mu': mu,
-        'phi': phi,
         'norm_factors': norm_factors,
-        'lib_sizes': lib_sizes
+        'lib_sizes': Z.sum(1)
     }
 
     # prepare model
     Model = {
-        'Normal': _ModelNormalGibbs,
         'Poisson': _ModelPoissonGibbs,
-        'Binom': _ModelBinomGibbs,
-        'NBinom': _ModelNBinomGibbs,
-        'NBinom2': _ModelNBinomGibbs2,
+        'Binomial': _ModelBinomGibbs,
+        'Normal': _ModelNormalGibbs
     }[mdl]
     mdl = Model(**args)
 

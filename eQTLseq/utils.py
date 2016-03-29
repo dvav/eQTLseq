@@ -7,6 +7,7 @@ import numpy.random as _rnd
 import scipy.linalg as _lin
 import scipy.optimize as _opt
 import scipy.special as _spc
+import scipy.stats as _stats
 
 
 def sample_multivariate_normal_one(U, b, z):
@@ -44,7 +45,7 @@ def sample_nbinom(mu, phi, size=None):
     return counts
 
 
-def normalise_RNAseq_data(read_counts, locfcn=_nmp.median):
+def calculate_norm_factors(read_counts, locfcn=_nmp.median):
     """Normalise RNA-seq counts data using the Relative Log Expression (RLE) method, as in DESeq."""
     # compute geometric mean of each row in log-scale
     logcounts = _nmp.log(read_counts)
@@ -71,7 +72,7 @@ def fit_nbinom_model(read_counts, normalised=False):
             - n_samples * _nmp.log(ymean + alpha)
 
     # iterate over genes and fit across samples
-    ydata = read_counts if normalised else read_counts / normalise_RNAseq_data(read_counts)
+    ydata = read_counts if normalised else read_counts / calculate_norm_factors(read_counts)
     ymean = _nmp.mean(ydata, 1)
     alpha = _nmp.zeros(n_genes)
     converged = _nmp.zeros(n_genes, dtype=bool)
@@ -94,3 +95,90 @@ def fit_nbinom_model(read_counts, normalised=False):
         'phi': 1 / alpha,
         'converged': converged
     }
+
+
+def blom(Z, c=3/8):
+    """TODO."""
+    _, N = Z.shape
+    R = _nmp.asarray([_stats.rankdata(_) for _ in Z])
+    P = (R - c) / (N - 2 * c + 1)
+    Y = _nmp.sqrt(2) * _spc.erfinv(2 * P - 1)    # probit function
+
+    #
+    return Y
+
+
+def transform_data(Z, norm_factors, kind='Blom'):
+    """TODO."""
+    assert kind in ('Blom', 'BoxCox', 'Log')
+
+    fcn = {
+        'Log': lambda x: _nmp.log(x + 1),
+        'BoxCox': lambda x: _nmp.asarray([_stats.boxcox(_ + 1)[0] for _ in x]),
+        'Blom': lambda x: blom(x + _rnd.rand(*x.shape)*1e-6)  # add small random numbers to avoid spurious ties
+    }[kind]
+
+    Z = Z / norm_factors[:, None]
+    Y = fcn(Z)
+
+    #
+    return Y
+
+
+def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
+    """Generate a matrix of genotypes, using a binomial model."""
+    # compute MAFs for each genetic marker and compute genotypes
+    MAF = _rnd.uniform(MAF_range[0], MAF_range[1], n_markers)
+    G = _rnd.binomial(2, MAF, (n_samples, n_markers))   # assume ploidy=2
+
+    # drop mono-morphic markers
+    G = G[:, _nmp.std(G, 0) > 0]
+
+    #
+    return {'G': G, 'MAF': MAF}
+
+
+def _simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h2):
+    """Simulate eQTLs with normally distributed gene expression data."""
+    _, n_markers = G.shape
+
+    # sample causal markers and affected genes
+    idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
+    idxs_genes_affected = _nmp.hstack([
+        _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
+    ])
+
+    # compute causal coefficients
+    s2g = h2 * s2e / (1 - h2)
+    beta = _nmp.zeros((n_genes, n_markers))
+    beta[idxs_genes_affected, idxs_markers_causal] = \
+        _rnd.normal(0, _nmp.sqrt(s2g / n_markers_causal), (n_genes_affected, n_markers_causal))
+
+    # compute phenotype
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+    Y = _rnd.normal(G.dot(beta.T), _nmp.sqrt(s2e))
+
+    #
+    return {'Y': Y, 'beta': beta}
+
+
+def simulate_eQTLs(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2e=1, h2=0.5):
+    """Simulate eQTLs with negative binomially distributed gene expression data."""
+    _, n_markers = G.shape
+    n_genes = phi.size if n_genes is None else n_genes
+
+    assert n_markers > n_markers_causal
+    assert n_genes > n_genes_affected
+    assert n_genes <= phi.size
+
+    idxs = _rnd.choice(phi.size, n_genes, replace=False)
+    mu, phi = mu[idxs], phi[idxs]
+
+    # compute phenotype
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+    res = _simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h2)
+    # Z = _utils.sample_nbinom(mu * _nmp.exp(res['Y']), phi)
+    Z = sample_nbinom(mu * _nmp.exp(G.dot(res['beta'].T)), phi)
+
+    #
+    return {'Z': Z, 'mu': mu, 'phi': phi, 'beta': res['beta'], 'Y': res['Y']}

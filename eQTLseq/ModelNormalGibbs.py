@@ -109,7 +109,6 @@ def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples):
     shape = 0.5 * (n_samples + n_markers)
     rate = 0.5 * YTY
     tau = _rnd.gamma(shape, 1 / rate)
-    tau[:] =1
 
     # sample beta
     A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))

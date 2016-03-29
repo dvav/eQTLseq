@@ -7,7 +7,7 @@ from eQTLseq.ModelNormalStdGibbs import ModelNormalStdGibbs as _ModelNormalStdGi
 
 
 class ModelBinomGibbs(_ModelNormalStdGibbs):
-    """An overdispersed Poisson model estimated using Gibbs sampling."""
+    """An overdispersed Binomial model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
         """TODO."""
@@ -40,8 +40,7 @@ class ModelBinomGibbs(_ModelNormalStdGibbs):
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY,
-                       n_burnin=n_burnin, beta_thr=beta_thr, s2_lims=s2_lims)
+        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=n_burnin, beta_thr=beta_thr, s2_lims=s2_lims)
 
         if(itr > n_burnin):
             self.mu_sum += self.mu

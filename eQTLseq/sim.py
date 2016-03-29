@@ -19,19 +19,19 @@ def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_phenotypes(G, mu=None, phi=None, mdl='Normal', n_markers_causal=2, n_genes=100, n_genes_affected=10,
+def simulate_phenotypes(G, mu=None, phi=None, mdl='NBinomial', n_markers_causal=2, n_genes=100, n_genes_affected=10,
                         s2e=1, h2=0.5):
     """Simulate eQTLs or single traits."""
     args = locals()
 
-    assert mdl in ('NBinom', 'Normal', 'Poisson', 'Binom')
+    assert mdl in ('NBinomial', 'Normal', 'Poisson', 'Binomial')
 
     #
     fcn = {
         'Normal': _simulate_eQTLs_normal,
-        'NBinom': _simulate_eQTLs_nbinom,
+        'NBinomial': _simulate_eQTLs_nbinom,
         'Poisson': _simulate_eQTLs_poisson,
-        'Binom': _simulate_eQTLs_binom,
+        'Binomial': _simulate_eQTLs_binom,
     }[mdl]
 
     #
@@ -128,43 +128,3 @@ def _simulate_eQTLs_nbinom(**args):
 
     #
     return {'Z': Z, 'mu': mu, 'phi': phi, 'coefs': res['coefs'], 'Y': res['Y']}
-
-# def _simulate_eQTLs_nbinom(**args):
-#     """Simulate eQTLs with normally distributed gene expression data."""
-#     G = args['G']
-#     mu = args['mu']
-#     phi = args['phi']
-#     n_markers_causal = args['n_markers_causal']
-#     n_genes = args['n_genes']
-#     n_genes_affected = args['n_genes_affected']
-#     h2 = args['h2']
-#
-#     n_samples, n_markers = G.shape
-#     n_genes = phi.size if n_genes is None else n_genes
-#
-#     assert n_markers >= n_markers_causal
-#     assert n_genes <= phi.size
-#     assert n_genes >= n_genes_affected
-#
-#     idxs = _rnd.choice(phi.size, n_genes, replace=False)
-#     mu, phi = mu[idxs], phi[idxs]
-#
-#     # sample causal markers and affected genes
-#     idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
-#     idxs_genes_affected = _nmp.hstack([
-#         _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
-#     ])
-#
-#     # compute causal coefficients
-#     s2e = 1  # mu[idxs_genes_affected] + mu[idxs_genes_affected]**2 / phi[idxs_genes_affected]
-#     s2g = h2 * s2e / (1 - h2)
-#     coefs = _nmp.zeros((n_genes, n_markers))
-#     coefs[idxs_genes_affected, idxs_markers_causal] = \
-#         _rnd.normal(0, _nmp.sqrt(s2g / n_markers_causal), (n_genes_affected, n_markers_causal))
-#
-#     # compute phenotype
-#     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-#     Y = _utils.sample_nbinom(mu * _nmp.exp(G.dot(coefs.T)), phi)
-#
-#     #
-#     return {'Y': Y, 'coefs': coefs, 'mu': mu, 'phi': phi}
