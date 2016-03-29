@@ -24,13 +24,14 @@ def simulate_phenotypes(G, mu=None, phi=None, mdl='Normal', n_markers_causal=2, 
     """Simulate eQTLs or single traits."""
     args = locals()
 
-    assert mdl in ('NBinom', 'Normal', 'Poisson')
+    assert mdl in ('NBinom', 'Normal', 'Poisson', 'Binom')
 
     #
     fcn = {
         'Normal': _simulate_eQTLs_normal,
         'NBinom': _simulate_eQTLs_nbinom,
-        'Poisson': _simulate_eQTLs_poisson
+        'Poisson': _simulate_eQTLs_poisson,
+        'Binom': _simulate_eQTLs_binom,
     }[mdl]
 
     #
@@ -88,10 +89,30 @@ def _simulate_eQTLs_poisson(**args):
     return {'Z': Z, 'mu': mu, 'coefs': res['coefs'], 'Y': res['Y']}
 
 
+def _simulate_eQTLs_binom(**args):
+    """Simulate eQTLs with normally distributed gene expression data."""
+    mu = args['mu']
+
+    args['n_genes'] = mu.size if args['n_genes'] is None else args['n_genes']
+    assert args['n_genes'] <= mu.size
+
+    idxs = _rnd.choice(mu.size, args['n_genes'], replace=False)
+    mu = mu[idxs]
+
+    # compute phenotype
+    res = _simulate_eQTLs_normal(**args)
+    pi = mu / (mu + _nmp.exp(-res['Y']))
+    Z = _rnd.binomial(1e6, pi)
+
+    #
+    return {'Z': Z, 'mu': mu, 'coefs': res['coefs'], 'Y': res['Y']}
+
+
 def _simulate_eQTLs_nbinom(**args):
     """Simulate eQTLs with normally distributed gene expression data."""
     mu = args['mu']
     phi = args['phi']
+    G = args['G']
 
     args['n_genes'] = phi.size if args['n_genes'] is None else args['n_genes']
     assert args['n_genes'] <= phi.size
@@ -100,8 +121,10 @@ def _simulate_eQTLs_nbinom(**args):
     mu, phi = mu[idxs], phi[idxs]
 
     # compute phenotype
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
     res = _simulate_eQTLs_normal(**args)
-    Z = _utils.sample_nbinom(mu * _nmp.exp(res['Y']), phi)
+    # Z = _utils.sample_nbinom(mu * _nmp.exp(res['Y']), phi)
+    Z = _utils.sample_nbinom(mu * _nmp.exp(G.dot(res['coefs'].T)), phi)
 
     #
     return {'Z': Z, 'mu': mu, 'phi': phi, 'coefs': res['coefs'], 'Y': res['Y']}

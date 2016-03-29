@@ -4,6 +4,7 @@ import sys as _sys
 
 import numpy as _nmp
 
+from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
 from eQTLseq.ModelNBinomGibbs2 import ModelNBinomGibbs2 as _ModelNBinomGibbs2
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
@@ -15,7 +16,7 @@ import eQTLseq.utils as _utils
 def run(D, G, mdl='Normal', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6, mu=None, phi=None, YY=None):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
-    assert mdl in ('Normal', 'Poisson', 'NBinom', 'NBinom2')
+    assert mdl in ('Normal', 'Poisson', 'Binom', 'NBinom', 'NBinom2')
 
     n_samples1 = D.shape[0]
     n_genes = D.shape[1] if _nmp.ndim(D) == 2 else 1
@@ -34,11 +35,13 @@ def run(D, G, mdl='Normal', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-
 
     if mdl == 'Normal':
         Z = None
+        lib_sizes = None
         Y = D - _nmp.mean(D, 0)
         YTY = _nmp.sum(Y**2, 0)
         GTY = G.T.dot(Y)
     else:
         Z = D
+        lib_sizes = Z.sum(1)
         Y = None
         YTY = None
         GTY = None
@@ -61,13 +64,15 @@ def run(D, G, mdl='Normal', norm=True, n_iters=1000, n_burnin=None, beta_thr=1e-
         'YY': YY,
         'mu': mu,
         'phi': phi,
-        'norm_factors': norm_factors
+        'norm_factors': norm_factors,
+        'lib_sizes': lib_sizes
     }
 
     # prepare model
     Model = {
         'Normal': _ModelNormalGibbs,
         'Poisson': _ModelPoissonGibbs,
+        'Binom': _ModelBinomGibbs,
         'NBinom': _ModelNBinomGibbs,
         'NBinom2': _ModelNBinomGibbs2,
     }[mdl]

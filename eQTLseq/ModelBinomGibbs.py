@@ -1,4 +1,4 @@
-"""Implements ModelPoissonGibbs."""
+"""Implements ModelBinomGibbs."""
 
 import numpy as _nmp
 import numpy.random as _rnd
@@ -6,7 +6,7 @@ import numpy.random as _rnd
 from eQTLseq.ModelNormalStdGibbs import ModelNormalStdGibbs as _ModelNormalStdGibbs
 
 
-class ModelPoissonGibbs(_ModelNormalStdGibbs):
+class ModelBinomGibbs(_ModelNormalStdGibbs):
     """An overdispersed Poisson model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -23,20 +23,18 @@ class ModelPoissonGibbs(_ModelNormalStdGibbs):
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G, GTG, norm_factors, n_burnin, beta_thr, s2_lims = args['Z'], args['G'], args['GTG'], \
-            args['norm_factors'], args['n_burnin'], args['beta_thr'], args['s2_lims']
+        Z, G, GTG, lib_sizes, n_burnin, beta_thr, s2_lims = args['Z'], args['G'], args['GTG'], \
+            args['lib_sizes'], args['n_burnin'], args['beta_thr'], args['s2_lims']
 
         # sample mu
-        # self.mu = args['mu']
-        self.mu = _sample_mu(Z, norm_factors, self.Y)
-        # self.mu = _update_mu(Z, norm_factors, self.Y)
+        self.mu = _sample_mu(Z, self.Y)
 
         # sample Y
         # self.Y = args['YY']
         # if _rnd.rand() < 0.5:
         #     self.Y = _sample_Y_local(Z, G, norm_factors, self.mu, self.Y, self.beta)
         # else:
-        self.Y = _sample_Y_global(Z, G, norm_factors, self.mu, self.Y, self.beta)
+        self.Y = _sample_Y_global(Z, G, lib_sizes, self.mu, self.Y, self.beta)
         self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
@@ -73,10 +71,15 @@ class ModelPoissonGibbs(_ModelNormalStdGibbs):
         return loglik
 
 
-def _sample_mu(Z, c, Y):
-    n_samples, _ = Z.shape
-    Z = Z / (_nmp.exp(Y) * c[:, None])
-    mu = _rnd.gamma(Z.sum(0), 1 / n_samples)
+def _sample_mu(Z, Y, a0=0.5, b0=0.5):
+    Z = Z * _nmp.exp(-Y)
+    n = Z.sum(1)
+    s = Z.sum(0)
+
+    a = a0 + s
+    b = b0 + (n[:, None] - Z).sum(0)
+    pi = _rnd.beta(a, b)
+    mu = pi / (1 - pi)
 
     #
     return mu
@@ -104,18 +107,18 @@ def _sample_Y_local(Z, G, c, mu, Y, beta, scale=0.01):
     return Y
 
 
-def _sample_Y_global(Z, G, c, mu, Y, beta):
+def _sample_Y_global(Z, G, n, mu, Y, beta):
     n_samples, n_genes = Z.shape
 
     # sample proposals from a normal prior
-    means = c[:, None] * mu * _nmp.exp(Y)
+    pi = mu / (mu + _nmp.exp(-Y))
 
     Y_ = _rnd.normal(G.dot(beta.T), 1)
-    means_ = c[:, None] * mu * _nmp.exp(Y_)
+    pi_ = mu / (mu + _nmp.exp(-Y_))
 
     # compute loglik
-    loglik = Z * _nmp.log(means) - means
-    loglik_ = Z * _nmp.log(means_) - means_
+    loglik = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log(1 - pi)
+    loglik_ = Z * _nmp.log(pi_) + (n[:, None] - Z) * _nmp.log(1 - pi_)
 
     # do Metropolis step
     idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(loglik_ - loglik)
@@ -123,11 +126,3 @@ def _sample_Y_global(Z, G, c, mu, Y, beta):
 
     #
     return Y
-
-
-def _update_mu(Z, c, Y):
-    Z = Z / (_nmp.exp(Y) * c[:, None])
-    mu = _nmp.mean(Z, 0)
-
-    #
-    return mu
