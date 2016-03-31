@@ -5,6 +5,8 @@ import sys as _sys
 import numpy as _nmp
 
 from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
+from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
+from eQTLseq.ModelNBinomGibbs2 import ModelNBinomGibbs2 as _ModelNBinomGibbs2
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
@@ -15,7 +17,7 @@ def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burn
         beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
-    assert mdl in ('Normal', 'Poisson', 'Binomial')
+    assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2')
 
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -53,14 +55,15 @@ def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burn
         'YTY': YTY,
         'GTG': GTG,
         'GTY': GTY,
-        'norm_factors': norm_factors,
-        'lib_sizes': Z.sum(1)
+        'norm_factors': norm_factors
     }
 
     # prepare model
     Model = {
         'Poisson': _ModelPoissonGibbs,
         'Binomial': _ModelBinomGibbs,
+        'NBinomial': _ModelNBinomGibbs,
+        'NBinomial2': _ModelNBinomGibbs2,
         'Normal': _ModelNormalGibbs
     }[mdl]
     mdl = Model(**args)

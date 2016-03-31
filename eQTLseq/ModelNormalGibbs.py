@@ -30,7 +30,7 @@ class ModelNormalGibbs(object):
     def update(self, itr, **args):
         """TODO."""
         YTY, GTG, GTY = args['YTY'], args['GTG'], args['GTY']
-        n_burnin, beta_thr, s2_lims, n_samples = args['n_burnin'], args['beta_thr'], args['s2_lims'], args['n_samples']
+        beta_thr, s2_lims = args['beta_thr'], args['s2_lims']
 
         # identify irrelevant genes and markers and exclude them
         idxs = (_nmp.abs(self.beta) > beta_thr) & (self.zeta * self.eta * self.tau[:, None] < 1 / s2_lims[0])
@@ -45,22 +45,21 @@ class ModelNormalGibbs(object):
         zeta = self.zeta[self.idxs_genes, :][:, self.idxs_markers]
         eta = self.eta[self.idxs_markers]
 
-        # sample beta, tau and zeta
-        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples)
+        # sample beta and tau
+        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, args['n_samples'])
         tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        zeta = _sample_zeta(beta, tau, eta)
-        zeta = _nmp.clip(zeta, 1 / s2_lims[1], 1 / s2_lims[0])
-
-        eta = _sample_eta(beta, tau, zeta)
-        eta = _nmp.clip(eta, 1 / s2_lims[1], 1 / s2_lims[0])
-
         self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
-        self.zeta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = zeta
         self.tau[self.idxs_genes] = tau
-        self.eta[self.idxs_markers] = eta
 
-        if(itr > n_burnin):
+        # sample eta and zeta
+        self.zeta = _sample_zeta(self.beta, self.tau, self.eta)
+        self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
+
+        self.eta = _sample_eta(self.beta, self.tau, self.zeta)
+        self.eta = _nmp.clip(self.eta, 1 / s2_lims[1], 1 / s2_lims[0])
+
+        if(itr > args['n_burnin']):
             self.tau_sum += self.tau
             self.zeta_sum += self.zeta
             self.eta_sum += self.eta
@@ -73,10 +72,7 @@ class ModelNormalGibbs(object):
 
     def get_estimates(self, **args):
         """TODO."""
-        n_iters, n_burnin = args['n_iters'], args['n_burnin']
-
-        #
-        N = n_iters - n_burnin
+        N = args['n_iters'] - args['n_burnin']
         tau_mean, zeta_mean, eta_mean, beta_mean = self.tau_sum / N, self.zeta_sum / N, self.eta_sum / N, \
             self.beta_sum / N
         tau_var, zeta_var, eta_var, beta_var = self.tau2_sum / N - tau_mean**2, self.zeta2_sum / N - zeta_mean**2, \

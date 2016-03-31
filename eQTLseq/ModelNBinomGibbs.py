@@ -18,7 +18,7 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
         super().__init__(n_genes=n_genes, n_markers=n_markers)
 
         # initial conditions
-        self.mu_phi, self.tau_phi, self.phi, self.mu = 0, 1, 0.01*_nmp.exp(_rnd.randn(n_genes)), _nmp.mean(Z, 0)
+        self.mu_phi, self.tau_phi, self.phi, self.mu = 0, 1, _nmp.exp(_rnd.randn(n_genes)), _nmp.mean(Z, 0)
 
         self.Y = _rnd.randn(n_samples, n_genes)
 
@@ -27,37 +27,28 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G, GTG, norm_factors, n_burnin, beta_thr, s2_lims, n_samples = args['Z'], args['G'], args['GTG'], \
-            args['norm_factors'], args['n_burnin'], args['beta_thr'], args['s2_lims'], args['n_samples']
+        Z, G, GTG, norm_factors = args['Z'], args['G'], args['GTG'], args['norm_factors']
 
         # sample mu and phi
         # self.mu = args['mu']
         # self.phi = args['phi']
         self.mu = _sample_mu(Z, norm_factors, self.phi, self.Y)
-        if _rnd.rand() < 0.5:
-            self.phi = _sample_phi_local(Z, norm_factors, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
-        else:
-            self.phi = _sample_phi_global(Z, norm_factors, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
+        self.phi = _sample_phi(Z, norm_factors, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
 
         # sample Y
-        # self.Y = args['YY']
-        if _rnd.rand() < 0.5:
-            self.Y = _sample_Y_local(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
-        else:
-            self.Y = _sample_Y_global(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
-
-        self.Y = (self.Y - _nmp.mean(self.Y, 0)) / _nmp.std(self.Y, 0)
+        self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY,
-                       n_burnin=n_burnin, beta_thr=beta_thr, s2_lims=s2_lims, n_samples=n_samples)
+        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=args['n_burnin'], beta_thr=args['beta_thr'],
+                       s2_lims=args['s2_lims'], n_samples=args['n_samples'])
 
         # sample mu_phi and tau_phi
         self.mu_phi, self.tau_phi = _sample_mu_tau_phi(self.phi)
 
-        if(itr > n_burnin):
+        if(itr > args['n_burnin']):
             self.phi_sum += self.phi
             self.phi2_sum += self.phi**2
             self.mu_sum += self.mu
@@ -69,10 +60,8 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
 
         #
         N = n_iters - n_burnin
-        phi_mean = self.phi_sum / N
-        phi_var = self.phi2_sum / N - phi_mean**2
-        mu_mean = self.mu_sum / N
-        mu_var = self.mu2_sum / N - mu_mean**2
+        phi_mean, mu_mean = self.phi_sum / N, self.mu_sum / N
+        phi_var, mu_var = self.phi2_sum / N - phi_mean**2, self.mu2_sum / N - mu_mean**2
 
         extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
 
@@ -84,12 +73,7 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
 
     def get_log_likelihood(self, **args):
         """TODO."""
-        Z, c = args['Z'], args['norm_factors']
-
-        alpha = 1 / self.phi
-        pi = alpha / (alpha + c[:, None] * self.mu * _nmp.exp(self.Y))
-
-        loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum()
+        loglik = super().get_log_likelihood(Y=self.Y, G=args['G'])
 
         #
         return loglik
@@ -151,6 +135,17 @@ def _sample_phi_global(Z, c, mu, phi, Y, mu_phi, tau_phi):
     return phi
 
 
+def _sample_phi(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi):
+    """TODO."""
+    if _rnd.rand() < 0.5:
+        phi = _sample_phi_local(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi)
+    else:
+        phi = _sample_phi_global(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi)
+
+    #
+    return phi
+
+
 def _sample_mu(Z, c, phi, Y, a=0.5, b=0.5):
     n_samples, _ = Z.shape
 
@@ -165,6 +160,25 @@ def _sample_mu(Z, c, phi, Y, a=0.5, b=0.5):
 
     #
     return mu
+
+
+def _sample_mu_tau_phi(phi):
+    n_genes = phi.size
+    log_phi = _nmp.log(phi)
+    log_phi2 = log_phi**2
+
+    # sample tau_phi
+    shape = 0.5 * n_genes
+    rate = 0.5 * log_phi2.sum()
+    tau_phi = _rnd.gamma(shape, 1 / rate)
+
+    # sample mu_phi, given tau_phi
+    mean = log_phi.sum() / n_genes
+    prec = n_genes * tau_phi
+    mu_phi = _rnd.normal(mean, 1 / _nmp.sqrt(prec))
+
+    #
+    return mu_phi, tau_phi
 
 
 def _sample_Y_local(Z, G, c, mu, phi, Y, beta, tau, scale=0.01):
@@ -218,23 +232,15 @@ def _sample_Y_global(Z, G, c, mu, phi, Y, beta, tau):
     return Y
 
 
-def _sample_mu_tau_phi(phi):
-    n_genes = phi.size
-    log_phi = _nmp.log(phi)
-    log_phi2 = log_phi**2
-
-    # sample tau_phi
-    shape = 0.5 * n_genes
-    rate = 0.5 * log_phi2.sum()
-    tau_phi = _rnd.gamma(shape, 1 / rate)
-
-    # sample mu_phi, given tau_phi
-    mean = log_phi.sum() / n_genes
-    prec = n_genes * tau_phi
-    mu_phi = _rnd.normal(mean, 1 / _nmp.sqrt(prec))
+def _sample_Y(Z, G, norm_factors, mu, phi, Y, beta, tau):
+    """TODO."""
+    if _rnd.rand() < 0.5:
+        Y = _sample_Y_local(Z, G, norm_factors, mu, phi, Y, beta, tau)
+    else:
+        Y = _sample_Y_global(Z, G, norm_factors, mu, phi, Y, beta, tau)
 
     #
-    return mu_phi, tau_phi
+    return Y
 
 
 def _update_mu_phi(Z, c, phi, Y):

@@ -3,10 +3,10 @@
 import numpy as _nmp
 import numpy.random as _rnd
 
-from eQTLseq.ModelNormalStdGibbs import ModelNormalStdGibbs as _ModelNormalStdGibbs
+from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
 
-class ModelBinomGibbs(_ModelNormalStdGibbs):
+class ModelBinomGibbs(_ModelNormalGibbs):
     """An overdispersed Binomial model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -23,26 +23,23 @@ class ModelBinomGibbs(_ModelNormalStdGibbs):
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G, GTG, lib_sizes, n_burnin, beta_thr, s2_lims = args['Z'], args['G'], args['GTG'], \
-            args['lib_sizes'], args['n_burnin'], args['beta_thr'], args['s2_lims']
+        Z, G, GTG, norm_factors = args['Z'], args['G'], args['GTG'], args['norm_factors']
 
         # sample mu
-        self.mu = _sample_mu(Z, self.Y)
+        self.mu = _sample_mu(Z, norm_factors, self.Y)
 
         # sample Y
         # self.Y = args['YY']
-        # if _rnd.rand() < 0.5:
-        #     self.Y = _sample_Y_local(Z, G, norm_factors, self.mu, self.Y, self.beta)
-        # else:
-        self.Y = _sample_Y_global(Z, G, lib_sizes, self.mu, self.Y, self.beta)
+        self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.Y, self.beta, self.tau)
         self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=n_burnin, beta_thr=beta_thr, s2_lims=s2_lims)
+        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=args['n_burnin'], beta_thr=args['beta_thr'],
+                       s2_lims=args['s2_lims'], n_samples=args['n_samples'])
 
-        if(itr > n_burnin):
+        if(itr > args['n_burnin']):
             self.mu_sum += self.mu
             self.mu2_sum += self.mu**2
 
@@ -70,8 +67,8 @@ class ModelBinomGibbs(_ModelNormalStdGibbs):
         return loglik
 
 
-def _sample_mu(Z, Y, a0=0.5, b0=0.5):
-    Z = Z * _nmp.exp(-Y)
+def _sample_mu(Z, c, Y, a0=0.5, b0=0.5):
+    Z = Z / c[:, None] * _nmp.exp(-Y)
     n = Z.sum(1)
     s = Z.sum(0)
 
@@ -84,19 +81,21 @@ def _sample_mu(Z, Y, a0=0.5, b0=0.5):
     return mu
 
 
-def _sample_Y_local(Z, G, c, mu, Y, beta, scale=0.01):
+def _sample_Y_local(Z, G, c, mu, Y, beta, tau, scale=0.01):
     n_samples, n_genes = Z.shape
     GBT = G.dot(beta.T)
+    Z = Z / c[:, None]
+    n = Z.sum(1)
 
-    # sample proposals from a normal prior
-    means = c[:, None] * mu * _nmp.exp(Y)
+    # sample proposals from a log-normal with small scale
+    pi = mu / (mu + _nmp.exp(-Y))
 
     Y_ = Y * _nmp.exp(scale * _rnd.randn(n_samples, n_genes))
-    means_ = c[:, None] * mu * _nmp.exp(Y_)
+    pi_ = mu / (mu + _nmp.exp(-Y_))
 
     # compute loglik
-    logpost = Z * _nmp.log(means) - means - 0.5 * (Y - GBT)**2
-    logpost_ = Z * _nmp.log(means_) - means_ - 0.5 * (Y_ - GBT)**2
+    logpost = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log1p(-pi) - 0.5 * tau * (Y - GBT)**2
+    logpost_ = Z * _nmp.log(pi_) + (n[:, None] - Z) * _nmp.log1p(-pi_) - 0.5 * tau * (Y_ - GBT)**2
 
     # do Metropolis step
     idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(logpost_ - logpost)
@@ -106,22 +105,35 @@ def _sample_Y_local(Z, G, c, mu, Y, beta, scale=0.01):
     return Y
 
 
-def _sample_Y_global(Z, G, n, mu, Y, beta):
+def _sample_Y_global(Z, G, c, mu, Y, beta, tau):
     n_samples, n_genes = Z.shape
+    Z = Z / c[:, None]
+    n = Z.sum(1)
 
     # sample proposals from a normal prior
     pi = mu / (mu + _nmp.exp(-Y))
 
-    Y_ = _rnd.normal(G.dot(beta.T), 1)
+    Y_ = _rnd.normal(G.dot(beta.T), 1 / _nmp.sqrt(tau))
     pi_ = mu / (mu + _nmp.exp(-Y_))
 
     # compute loglik
-    loglik = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log(1 - pi)
-    loglik_ = Z * _nmp.log(pi_) + (n[:, None] - Z) * _nmp.log(1 - pi_)
+    loglik = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log1p(-pi)
+    loglik_ = Z * _nmp.log(pi_) + (n[:, None] - Z) * _nmp.log1p(-pi_)
 
     # do Metropolis step
     idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(loglik_ - loglik)
     Y[idxs] = Y_[idxs]
+
+    #
+    return Y
+
+
+def _sample_Y(Z, G, norm_factors, mu, Y, beta, tau):
+    """TODO."""
+    if _rnd.rand() < 0.5:
+        Y = _sample_Y_local(Z, G, norm_factors, mu, Y, beta, tau)
+    else:
+        Y = _sample_Y_global(Z, G, norm_factors, mu, Y, beta, tau)
 
     #
     return Y

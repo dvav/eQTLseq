@@ -138,7 +138,7 @@ def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
     return {'G': G, 'MAF': MAF}
 
 
-def _simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h2):
+def simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h2):
     """Simulate eQTLs with normally distributed gene expression data."""
     _, n_markers = G.shape
 
@@ -162,7 +162,7 @@ def _simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, 
     return {'Y': Y, 'beta': beta}
 
 
-def simulate_eQTLs(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2e=1, h2=0.5):
+def simulate_eQTLs_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2e=1, h2=0.5):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size if n_genes is None else n_genes
@@ -176,7 +176,7 @@ def simulate_eQTLs(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affecte
 
     # compute phenotype
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-    res = _simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h2)
+    res = simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h2)
     # Z = _utils.sample_nbinom(mu * _nmp.exp(res['Y']), phi)
     Z = sample_nbinom(mu * _nmp.exp(G.dot(res['beta'].T)), phi)
 
