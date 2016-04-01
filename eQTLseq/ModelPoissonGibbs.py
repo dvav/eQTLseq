@@ -30,9 +30,8 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         self.mu = _sample_mu(Z, norm_factors, self.Y)
 
         # sample Y
-        # self.Y = args['YY']
-        self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.Y, self.beta, self.tau)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
+        self.Y = args['YY']
+        # self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.Y, self.beta, self.tau)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)

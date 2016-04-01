@@ -177,7 +177,7 @@ def simulate_eQTLs_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_
     # compute phenotype
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
     res = simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h2)
-    # Z = _utils.sample_nbinom(mu * _nmp.exp(res['Y']), phi)
+    # Z = sample_nbinom(mu * _nmp.exp(res['Y']), phi)
     Z = sample_nbinom(mu * _nmp.exp(G.dot(res['beta'].T)), phi)
 
     #

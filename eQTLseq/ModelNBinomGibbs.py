@@ -30,14 +30,12 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
         Z, G, GTG, norm_factors = args['Z'], args['G'], args['GTG'], args['norm_factors']
 
         # sample mu and phi
-        # self.mu = args['mu']
-        # self.phi = args['phi']
         self.mu = _sample_mu(Z, norm_factors, self.phi, self.Y)
         self.phi = _sample_phi(Z, norm_factors, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
 
         # sample Y
-        self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
+        self.Y = args['YY']
+        # self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)

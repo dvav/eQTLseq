@@ -14,7 +14,7 @@ import eQTLseq.utils as _utils
 
 
 def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burnin=None,
-        beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6):
+        beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6, **extra):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
     assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2')
@@ -73,7 +73,7 @@ def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burn
     loglik.fill(_nmp.nan)
     loglik[0] = 0
     for itr in range(1, n_iters + 1):
-        mdl.update(itr, **args)
+        mdl.update(itr, **args, **extra)
         loglik[itr] = mdl.get_log_likelihood(**args)
 
         print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
