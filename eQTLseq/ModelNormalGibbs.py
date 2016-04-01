@@ -46,8 +46,7 @@ class ModelNormalGibbs(object):
         eta = self.eta[self.idxs_markers]
 
         # sample beta and tau
-        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, args['n_samples'])
-        tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
+        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, args['n_samples'], s2_lims)
 
         self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
         self.tau[self.idxs_genes] = tau
@@ -88,16 +87,17 @@ class ModelNormalGibbs(object):
     def get_log_likelihood(self, **args):
         """TODO."""
         Y, G = args['Y'], args['G']
+        n_samples, n_genes = Y.shape
 
         #
         resid = Y - G.dot(self.beta.T)
-        loglik = -0.5 * (self.tau * resid**2 - _nmp.log(self.tau)).sum()
+        loglik = (0.5 * _nmp.log(self.tau) - 0.5 * self.tau * resid**2).sum() / (n_samples * n_genes)
 
         #
         return loglik
 
 
-def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples):
+def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
     """TODO."""
     _, n_markers = zeta.shape
 
@@ -105,7 +105,8 @@ def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples):
     shape = 0.5 * (n_samples + n_markers)
     rate = 0.5 * YTY
     tau = _rnd.gamma(shape, 1 / rate)
-
+    tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
+    # tau[:] =1
     # sample beta
     A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
     b = tau * GTY

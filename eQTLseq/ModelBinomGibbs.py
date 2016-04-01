@@ -11,14 +11,16 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
     def __init__(self, **args):
         """TODO."""
-        Z, n_markers = args['Z'], args['n_markers']
+        Z, c, n_markers = args['Z'], args['norm_factors'], args['n_markers']
         n_samples, n_genes = Z.shape
 
         super().__init__(n_genes=n_genes, n_markers=n_markers)
 
         # initial conditions
-        self.mu = _nmp.mean(Z, 0)
         self.Y = _rnd.randn(n_samples, n_genes)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
+
+        self.mu = _nmp.mean(Z / c[:, None] * _nmp.exp(-self.Y), 0)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
 
     def update(self, itr, **args):
@@ -31,6 +33,7 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         # sample Y
         # self.Y = args['YY']
         self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.Y, self.beta, self.tau)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
@@ -129,10 +132,10 @@ def _sample_Y_global(Z, G, c, mu, Y, beta, tau):
 
 def _sample_Y(Z, G, norm_factors, mu, Y, beta, tau):
     """TODO."""
-    if _rnd.rand() < 0.5:
-        Y = _sample_Y_local(Z, G, norm_factors, mu, Y, beta, tau)
-    else:
-        Y = _sample_Y_global(Z, G, norm_factors, mu, Y, beta, tau)
+    # if _rnd.rand() < 0.5:
+    #     Y = _sample_Y_local(Z, G, norm_factors, mu, Y, beta, tau)
+    # else:
+    Y = _sample_Y_global(Z, G, norm_factors, mu, Y, beta, tau)
 
     #
     return Y

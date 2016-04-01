@@ -11,14 +11,15 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
     def __init__(self, **args):
         """TODO."""
-        Z, n_markers = args['Z'], args['n_markers']
+        Z, c, n_markers = args['Z'], args['norm_factors'], args['n_markers']
         n_samples, n_genes = Z.shape
 
         super().__init__(n_genes=n_genes, n_markers=n_markers)
 
         # initial conditions
-        self.mu = _nmp.mean(Z, 0)
         self.Y = _rnd.randn(n_samples, n_genes)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
+        self.mu = _nmp.mean(Z / c[:, None] * _nmp.exp(-self.Y), 0)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
 
     def update(self, itr, **args):
@@ -30,10 +31,12 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         self.mu = _sample_mu(Z, norm_factors, self.Y)
 
         # sample Y
-        self.Y = args['YY']
-        # self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.Y, self.beta, self.tau)
+        # self.Y = args['YY']
+        self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.Y, self.beta, self.tau)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
+        # Y = self.Y - _nmp.mean(self.Y, 0)
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
         super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=args['n_burnin'], beta_thr=args['beta_thr'],
@@ -69,7 +72,7 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
 def _sample_mu(Z, c, Y):
     n_samples, _ = Z.shape
-    Z = Z / (_nmp.exp(Y) * c[:, None])
+    Z = Z / c[:, None] * _nmp.exp(-Y)
     mu = _rnd.gamma(Z.sum(0), 1 / n_samples)
 
     #
@@ -121,10 +124,10 @@ def _sample_Y_global(Z, G, c, mu, Y, beta, tau):
 
 def _sample_Y(Z, G, norm_factors, mu, Y, beta, tau):
     """TODO."""
-    if _rnd.rand() < 0.5:
-        Y = _sample_Y_local(Z, G, norm_factors, mu, Y, beta, tau)
-    else:
-        Y = _sample_Y_global(Z, G, norm_factors, mu, Y, beta, tau)
+    # if _rnd.rand() < 0.5:
+    #     Y = _sample_Y_local(Z, G, norm_factors, mu, Y, beta, tau)
+    # else:
+    Y = _sample_Y_global(Z, G, norm_factors, mu, Y, beta, tau)
 
     #
     return Y

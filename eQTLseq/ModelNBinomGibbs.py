@@ -12,15 +12,17 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
 
     def __init__(self, **args):
         """TODO."""
-        Z, n_markers = args['Z'], args['n_markers']
+        Z, c, n_markers = args['Z'], args['norm_factors'], args['n_markers']
         n_samples, n_genes = Z.shape
 
         super().__init__(n_genes=n_genes, n_markers=n_markers)
 
         # initial conditions
-        self.mu_phi, self.tau_phi, self.phi, self.mu = 0, 1, _nmp.exp(_rnd.randn(n_genes)), _nmp.mean(Z, 0)
-
         self.Y = _rnd.randn(n_samples, n_genes)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
+
+        self.mu_phi, self.tau_phi, self.phi = 0, 1, _nmp.exp(_rnd.randn(n_genes))
+        self.mu = _nmp.mean(Z / c[:, None] * _nmp.exp(-self.Y), 0)
 
         self.phi_sum, self.phi2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
@@ -32,10 +34,12 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
         # sample mu and phi
         self.mu = _sample_mu(Z, norm_factors, self.phi, self.Y)
         self.phi = _sample_phi(Z, norm_factors, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
+        # self.phi = args['phi']
 
         # sample Y
-        self.Y = args['YY']
-        # self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
+        # self.Y = args['YY']
+        self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
@@ -135,10 +139,10 @@ def _sample_phi_global(Z, c, mu, phi, Y, mu_phi, tau_phi):
 
 def _sample_phi(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi):
     """TODO."""
-    if _rnd.rand() < 0.5:
-        phi = _sample_phi_local(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi)
-    else:
-        phi = _sample_phi_global(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi)
+    # if _rnd.rand() < 0.5:
+    #     phi = _sample_phi_local(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi)
+    # else:
+    phi = _sample_phi_global(Z, norm_factors, mu, phi, Y, mu_phi, tau_phi)
 
     #
     return phi
@@ -232,10 +236,10 @@ def _sample_Y_global(Z, G, c, mu, phi, Y, beta, tau):
 
 def _sample_Y(Z, G, norm_factors, mu, phi, Y, beta, tau):
     """TODO."""
-    if _rnd.rand() < 0.5:
-        Y = _sample_Y_local(Z, G, norm_factors, mu, phi, Y, beta, tau)
-    else:
-        Y = _sample_Y_global(Z, G, norm_factors, mu, phi, Y, beta, tau)
+    # if _rnd.rand() < 0.5:
+    #     Y = _sample_Y_local(Z, G, norm_factors, mu, phi, Y, beta, tau)
+    # else:
+    Y = _sample_Y_global(Z, G, norm_factors, mu, phi, Y, beta, tau)
 
     #
     return Y
