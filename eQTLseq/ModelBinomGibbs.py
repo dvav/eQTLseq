@@ -18,7 +18,6 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
         # initial conditions
         self.Y = _rnd.randn(n_samples, n_genes)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         self.mu = _nmp.mean(Z / c[:, None] * _nmp.exp(-self.Y), 0)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)

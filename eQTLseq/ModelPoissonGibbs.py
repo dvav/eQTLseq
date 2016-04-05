@@ -18,7 +18,7 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
         # initial conditions
         self.Y = _rnd.randn(n_samples, n_genes)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
+
         self.mu = _nmp.mean(Z / c[:, None] * _nmp.exp(-self.Y), 0)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
 
@@ -36,7 +36,6 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
-        # Y = self.Y - _nmp.mean(self.Y, 0)
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
         super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=args['n_burnin'], beta_thr=args['beta_thr'],

@@ -106,7 +106,7 @@ def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
     rate = 0.5 * YTY
     tau = _rnd.gamma(shape, 1 / rate)
     tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
-    # tau[:] =1
+
     # sample beta
     A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
     b = tau * GTY

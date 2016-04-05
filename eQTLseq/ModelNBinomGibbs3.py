@@ -22,7 +22,6 @@ class ModelNBinomGibbs3(object):
         self.beta = _rnd.randn(n_genes, n_markers)
 
         self.Y = _rnd.randn(n_samples, n_genes)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         self.mu_phi, self.tau_phi, self.phi = 0, 1, _nmp.exp(_rnd.randn(n_genes))
         self.mu = _nmp.mean(Z / c[:, None] * _nmp.exp(-self.Y), 0)
@@ -53,7 +52,7 @@ class ModelNBinomGibbs3(object):
         # sample Y
         # self.Y = args['YY']
         self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
+        self.Y = (self.Y - _nmp.mean(self.Y, 0)) / _nmp.std(self.Y, 0)
 
         # identify relevant genes and markers and include
         idxs = (_nmp.abs(self.beta) > beta_thr) & \

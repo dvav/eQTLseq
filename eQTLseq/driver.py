@@ -8,17 +8,18 @@ from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
 from eQTLseq.ModelNBinomGibbs2 import ModelNBinomGibbs2 as _ModelNBinomGibbs2
 from eQTLseq.ModelNBinomGibbs3 import ModelNBinomGibbs3 as _ModelNBinomGibbs3
+from eQTLseq.ModelNBinomGibbs4 import ModelNBinomGibbs4 as _ModelNBinomGibbs4
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
 import eQTLseq.utils as _utils
 
 
-def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burnin=None,
+def run(Z, G, mdl='Poisson', trans=None, std=True, norm_factors=None, n_iters=1000, n_burnin=None,
         beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6, **extra):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.1) if n_burnin is None else n_burnin
-    assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3')
+    assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3', 'NBinomial4')
 
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -33,7 +34,7 @@ def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burn
 
     if mdl == 'Normal':
         Y = _utils.transform_data(Z, norm_factors, kind=trans) if trans is not None else Z
-        Y = Y - _nmp.mean(Y, 0)
+        Y = (Y - _nmp.mean(Y, 0)) / _nmp.std(Y, 0) if std else Y - _nmp.mean(Y, 0)
         YTY = _nmp.sum(Y**2, 0)
         GTY = G.T.dot(Y)
     else:
@@ -59,7 +60,8 @@ def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burn
         'norm_factors': norm_factors,
         'mu': extra['mu'],
         'phi': extra['phi'],
-        'YY': extra['YY']
+        'YY': extra['YY'],
+        'beta': extra['beta']
     }
 
     # prepare model
@@ -69,6 +71,7 @@ def run(Z, G, mdl='Poisson', trans=None, norm_factors=None, n_iters=1000, n_burn
         'NBinomial': _ModelNBinomGibbs,
         'NBinomial2': _ModelNBinomGibbs2,
         'NBinomial3': _ModelNBinomGibbs3,
+        'NBinomial4': _ModelNBinomGibbs4,
         'Normal': _ModelNormalGibbs
     }[mdl]
     mdl = Model(**args)
