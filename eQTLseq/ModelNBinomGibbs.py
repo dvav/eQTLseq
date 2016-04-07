@@ -183,10 +183,10 @@ def _sample_phi_global(Z, G, c, mu, phi, beta, mu_phi, tau_phi):
 
 def _sample_phi(Z, G, norm_factors, mu, phi, beta, mu_phi, tau_phi):
     """TODO."""
-    if _rnd.rand() < 0.5:
-        phi = _sample_phi_local(Z, G, norm_factors, mu, phi, beta, mu_phi, tau_phi)
-    else:
-        phi = _sample_phi_global(Z, G, norm_factors, mu, phi, beta, mu_phi, tau_phi)
+    # if _rnd.rand() < 0.5:
+    #     phi = _sample_phi_local(Z, G, norm_factors, mu, phi, beta, mu_phi, tau_phi)
+    # else:
+    phi = _sample_phi_global(Z, G, norm_factors, mu, phi, beta, mu_phi, tau_phi)
 
     #
     return phi
@@ -294,10 +294,10 @@ def _sample_beta_one(Z, G, norm_factors, mu, phi, beta, tau, zeta, eta, idx):
     zeta_i = zeta[:, idx]
     eta_i = eta[idx]
 
-    if _rnd.rand() < 0.5:
-        beta_one = _sample_beta_one_local(Z, G_i, G, norm_factors, mu, phi, beta_i, beta, tau, zeta_i, eta_i)
-    else:
-        beta_one = _sample_beta_one_global(Z, G_i, G, norm_factors, mu, phi, beta_i, beta, tau, zeta_i, eta_i)
+    # if _rnd.rand() < 0.5:
+    #     beta_one = _sample_beta_one_local(Z, G_i, G, norm_factors, mu, phi, beta_i, beta, tau, zeta_i, eta_i)
+    # else:
+    beta_one = _sample_beta_one_global(Z, G_i, G, norm_factors, mu, phi, beta_i, beta, tau, zeta_i, eta_i)
 
     #
     return beta_one

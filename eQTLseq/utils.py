@@ -10,11 +10,11 @@ import scipy.special as _spc
 import scipy.stats as _stats
 
 
-def sample_multivariate_normal_one(U, b, z):
+def sample_multivariate_normal_one(L, b, z):
     """TODO."""
-    y = _lin.solve_triangular(U, z)  # U * y = z
-    mu_ = _lin.solve_triangular(U, b, trans='T')  # U.T * mu_ = b, where mu_ = U * mu
-    mu = _lin.solve_triangular(U, mu_)  # U * mu = mu_
+    y = _lin.solve_triangular(L.T, z, lower=False)  # L.T * y = z
+    mu_ = _lin.solve_triangular(L, b, lower=True)  # L * mu_ = b, where mu_ = L.T * mu
+    mu = _lin.solve_triangular(L.T, mu_, lower=False)  # L.T * mu = mu_
 
     #
     return y + mu
@@ -23,14 +23,24 @@ def sample_multivariate_normal_one(U, b, z):
 def sample_multivariate_normal_many(b, A):
     """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
     z = _rnd.normal(size=b.shape)
-
     L = _nmp.linalg.cholesky(A)
-    U = _nmp.transpose(L, axes=(0, 2, 1))
-
-    y = [sample_multivariate_normal_one(U_, b_, z_) for U_, b_, z_ in zip(U, b, z)]
+    y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)]
 
     # return
     return _nmp.asarray(y)
+
+
+# def sample_multivariate_normal_many(b, A):
+#     """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
+#     S = _nmp.linalg.inv(A)
+#     L = _nmp.linalg.cholesky(S)
+#     mu = _nmp.sum(S * b[:, None, :], 2)
+#     z = _rnd.normal(size=b.shape)
+#
+#     y = mu + _nmp.sum(L * z[:, None, :], 2)
+#
+#     # return
+#     return y
 
 
 def sample_nbinom(mu, phi, size=None):
@@ -182,3 +192,34 @@ def simulate_eQTLs_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_
 
     #
     return {'Z': Z, 'mu': mu, 'phi': phi, 'beta': res['beta'], 'Y': res['Y']}
+
+
+def calculate_metrics(beta, beta_true, beta_thr=1e-6):
+    """Calculate errors between estimated and true matrices of coefficients."""
+    beta[_nmp.abs(beta) < beta_thr] = 0
+    beta_true[_nmp.abs(beta_true) < beta_thr] = 0
+
+    # sum of squared residuals
+    resid2 = _nmp.sum((beta - beta_true)**2)
+
+    # matrix of hits
+    hits = _nmp.abs(_nmp.sign(beta))
+    hits_true = _nmp.abs(_nmp.sign(beta_true))
+
+    # true and false positives/negatives
+    TP = _nmp.sum((hits == 1) & (hits_true == 1))
+    TN = _nmp.sum((hits == 0) & (hits_true == 0))
+    FP = _nmp.sum((hits == 1) & (hits_true == 0))
+    FN = _nmp.sum((hits == 0) & (hits_true == 1))
+
+    assert TP + TN + FP + FN == beta.size
+
+    # Matthew's correlation coefficient, accuracy, F1, sensitivity, specificity
+    MCC = (TP * TN - FP * FN) / _nmp.sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN))
+    ACC = (TP + TN) / (TP + FP + FN + TN)
+    F1 = 2 * TP / (2 * TP + FP + FN)
+    SN = TP / (TP + FN)
+    SP = TN / (TN + FP)
+
+    #
+    return resid2, MCC, ACC, F1, SN, SP, TP, TN, FP, FN

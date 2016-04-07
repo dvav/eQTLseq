@@ -10,16 +10,17 @@ from eQTLseq.ModelNBinomGibbs2 import ModelNBinomGibbs2 as _ModelNBinomGibbs2
 from eQTLseq.ModelNBinomGibbs3 import ModelNBinomGibbs3 as _ModelNBinomGibbs3
 from eQTLseq.ModelNBinomGibbs4 import ModelNBinomGibbs4 as _ModelNBinomGibbs4
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
+from eQTLseq.ModelNormalGibbs2 import ModelNormalGibbs2 as _ModelNormalGibbs2
 from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
 import eQTLseq.utils as _utils
 
 
 def run(Z, G, mdl='Poisson', trans=None, std=True, norm_factors=None, n_iters=1000, n_burnin=None,
-        beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol=1e-6, **extra):
+        beta_thr=1e-6, s2_lims=(1e-20, 1e3), **extra):
     """Run an estimation algorithm for a specified number of iterations."""
-    n_burnin = round(n_iters * 0.1) if n_burnin is None else n_burnin
-    assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3', 'NBinomial4')
+    n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
+    assert mdl in ('Normal', 'Normal2', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3', 'NBinomial4')
 
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -32,7 +33,7 @@ def run(Z, G, mdl='Poisson', trans=None, std=True, norm_factors=None, n_iters=10
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
     GTG = G.T.dot(G)
 
-    if mdl == 'Normal':
+    if mdl in ('Normal', 'Normal2'):
         Y = _utils.transform_data(Z, norm_factors, kind=trans) if trans is not None else Z
         Y = (Y - _nmp.mean(Y, 0)) / _nmp.std(Y, 0) if std else Y - _nmp.mean(Y, 0)
         YTY = _nmp.sum(Y**2, 0)
@@ -72,11 +73,13 @@ def run(Z, G, mdl='Poisson', trans=None, std=True, norm_factors=None, n_iters=10
         'NBinomial2': _ModelNBinomGibbs2,
         'NBinomial3': _ModelNBinomGibbs3,
         'NBinomial4': _ModelNBinomGibbs4,
-        'Normal': _ModelNormalGibbs
+        'Normal': _ModelNormalGibbs,
+        'Normal2': _ModelNormalGibbs2
     }[mdl]
     mdl = Model(**args)
 
     # loop
+    print('\r' + 'Iteration {0} of {1}'.format(0, n_iters), end='', file=_sys.stderr)
     loglik = _nmp.empty(n_iters + 1)
     loglik.fill(_nmp.nan)
     loglik[0] = 0
