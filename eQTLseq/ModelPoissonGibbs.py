@@ -61,12 +61,9 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
             **extra
         )
 
-    def get_log_likelihood(self, **args):
+    def get_state(self, **args):
         """TODO."""
-        loglik = super().get_log_likelihood(Y=self.Y, G=args['G'])
-
-        #
-        return loglik
+        return super().get_state()
 
 
 def _sample_mu(Z, c, Y):

@@ -80,16 +80,9 @@ class ModelNormalStdGibbs(object):
             'beta': beta_mean, 'beta_var': beta_var
         }
 
-    def get_log_likelihood(self, **args):
+    def get_state(self, **args):
         """TODO."""
-        Y, G = args['Y'], args['G']
-
-        #
-        resid = Y - G.dot(self.beta.T)
-        loglik = -0.5 * (resid**2).sum()
-
-        #
-        return loglik
+        return _nmp.sqrt((self.beta**2).sum())
 
 
 def _sample_beta(GTG, GTY, zeta, eta):

@@ -13,14 +13,19 @@ from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelNormalGibbs2 import ModelNormalGibbs2 as _ModelNormalGibbs2
 from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
+from eQTLseq.ModelNormalEM import ModelNormalEM as _ModelNormalEM
+
+from eQTLseq.ModelNormalVB import ModelNormalVB as _ModelNormalVB
+
 import eQTLseq.utils as _utils
 
 
-def run(Z, G, mdl='Poisson', trans=None, std=True, norm_factors=None, n_iters=1000, n_burnin=None,
-        beta_thr=1e-6, s2_lims=(1e-20, 1e3), **extra):
+def run(Z, G, mdl='Normal', alg='Gibbs', trans=None, std=True, norm_factors=None, n_iters=1000, n_burnin=None,
+        beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol_abs=1e-6, tol_rel=1e-3, **extra):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
     assert mdl in ('Normal', 'Normal2', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3', 'NBinomial4')
+    assert alg in ('Gibbs', 'VB', 'EM')
 
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -67,29 +72,37 @@ def run(Z, G, mdl='Poisson', trans=None, std=True, norm_factors=None, n_iters=10
 
     # prepare model
     Model = {
-        'Poisson': _ModelPoissonGibbs,
-        'Binomial': _ModelBinomGibbs,
-        'NBinomial': _ModelNBinomGibbs,
-        'NBinomial2': _ModelNBinomGibbs2,
-        'NBinomial3': _ModelNBinomGibbs3,
-        'NBinomial4': _ModelNBinomGibbs4,
-        'Normal': _ModelNormalGibbs,
-        'Normal2': _ModelNormalGibbs2
-    }[mdl]
+        'Poisson': {'Gibbs': _ModelPoissonGibbs},
+        'Binomial': {'Gibbs': _ModelBinomGibbs},
+        'NBinomial': {'Gibbs': _ModelNBinomGibbs},
+        'NBinomial2': {'Gibbs': _ModelNBinomGibbs2},
+        'NBinomial3': {'Gibbs': _ModelNBinomGibbs3},
+        'NBinomial4': {'Gibbs': _ModelNBinomGibbs4},
+        'Normal': {'Gibbs': _ModelNormalGibbs, 'VB': _ModelNormalVB, 'EM': _ModelNormalEM},
+        'Normal2': {'Gibbs': _ModelNormalGibbs2}
+    }[mdl][alg]
     mdl = Model(**args)
 
     # loop
     print('\r' + 'Iteration {0} of {1}'.format(0, n_iters), end='', file=_sys.stderr)
-    loglik = _nmp.empty(n_iters + 1)
-    loglik.fill(_nmp.nan)
-    loglik[0] = 0
+    state = _nmp.empty(n_iters + 1)
+    state.fill(_nmp.nan)
+    state[0] = 0
     for itr in range(1, n_iters + 1):
+        # update
         mdl.update(itr, **args)
-        loglik[itr] = mdl.get_log_likelihood(**args)
+        state[itr] = mdl.get_state(**args)
 
+        # log
         print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
+
+        # error
+        err_abs = _nmp.abs(state[itr] - state[itr-1])
+        err_rel = _nmp.abs((state[itr] - state[itr-1])/state[itr-1])
+        if err_abs < tol_abs and err_rel < tol_rel:
+            break
 
     print('\nDone!', file=_sys.stderr)
 
     #
-    return loglik, mdl.get_estimates(**args)
+    return state, mdl.get_estimates(**args)

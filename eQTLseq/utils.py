@@ -10,6 +10,24 @@ import scipy.special as _spc
 import scipy.stats as _stats
 
 
+def solve_chol_one(L, b):
+    """TODO."""
+    x_ = _lin.solve_triangular(L, b, lower=True)  # L * x_ = b, where x_ = L.T * x
+    x = _lin.solve_triangular(L.T, x_, lower=False)  # L.T * x = x_
+
+    #
+    return x
+
+
+def solve_chol_many(A, b):
+    """TODO."""
+    L = _nmp.linalg.cholesky(A)
+    x = [solve_chol_one(L_, b_) for L_, b_ in zip(L, b)]
+
+    #
+    return _nmp.asarray(x)
+
+
 def sample_multivariate_normal_one(L, b, z):
     """TODO."""
     y = _lin.solve_triangular(L.T, z, lower=False)  # L.T * y = z

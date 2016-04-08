@@ -119,18 +119,9 @@ class ModelNBinomGibbs3(object):
 
         }
 
-    def get_log_likelihood(self, **args):
+    def get_state(self, **args):
         """TODO."""
-        G = args['G']
-        n_samples, n_genes = self.Y.shape
-
-        #
-        theta = self.tau / self.phi
-        resid = self.Y - G.dot(self.beta.T)
-        loglik = (0.5 * _nmp.log(theta) - 0.5 * theta * resid**2).sum() / (n_samples * n_genes)
-
-        #
-        return loglik
+        return _nmp.sqrt((self.beta**2).sum())
 
 
 def _sample_phi_local(Z, G, c, mu, phi, Y, beta, tau, zeta, eta, mu_phi, tau_phi, scale=0.01):

@@ -62,10 +62,7 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
     def get_log_likelihood(self, **args):
         """TODO."""
-        loglik = super().get_log_likelihood(Y=self.Y, G=args['G'])
-
-        #
-        return loglik
+        return super().get_state()
 
 
 def _sample_mu(Z, c, Y, a0=0.5, b0=0.5):

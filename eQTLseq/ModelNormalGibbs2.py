@@ -87,17 +87,9 @@ class ModelNormalGibbs2(object):
             'beta': beta_mean, 'beta_var': beta_var
         }
 
-    def get_log_likelihood(self, **args):
+    def get_state(self, **args):
         """TODO."""
-        Y, G = args['Y'], args['G']
-        n_samples, n_genes = Y.shape
-
-        #
-        resid = Y - G.dot(self.beta.T)
-        loglik = (0.5 * _nmp.log(self.tau) - 0.5 * self.tau * resid**2).sum() / (n_samples * n_genes)
-
-        #
-        return loglik
+        return _nmp.sqrt((self.beta**2).sum())
 
 
 def _sample_beta_one(Y, G_j, G, beta, tau, zeta_j, eta_j):

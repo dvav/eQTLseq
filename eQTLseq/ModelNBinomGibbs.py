@@ -111,18 +111,9 @@ class ModelNBinomGibbs(object):
             'beta': beta_mean, 'beta_var': beta_var
         }
 
-    def get_log_likelihood(self, **args):
+    def get_state(self, **args):
         """TODO."""
-        G, Z, c = args['G'], args['Z'], args['norm_factors']
-        n_samples, n_genes = Z.shape
-
-        alpha = 1 / self.phi
-        pi = alpha / (alpha + c[:, None] * self.mu * _nmp.exp(G.dot(self.beta.T)))
-
-        loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum()
-
-        #
-        return loglik / (n_samples * n_genes)
+        return _nmp.sqrt((self.beta**2).sum())
 
 
 def _sample_phi_local(Z, G, c, mu, phi, beta, mu_phi, tau_phi, scale=0.01):
