@@ -96,11 +96,11 @@ def run(Z, G, mdl='Normal', alg='Gibbs', trans=None, std=True, norm_factors=None
         # log
         print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
 
-        # error
-        err_abs = _nmp.abs(state[itr] - state[itr-1])
-        err_rel = _nmp.abs((state[itr] - state[itr-1])/state[itr-1])
-        if err_abs < tol_abs and err_rel < tol_rel:
-            break
+        # # error
+        # err_abs = _nmp.abs(state[itr] - state[itr-1])
+        # err_rel = _nmp.abs((state[itr] - state[itr-1])/state[itr-1])
+        # if err_abs < tol_abs and err_rel < tol_rel:
+        #     break
 
     print('\nDone!', file=_sys.stderr)
 

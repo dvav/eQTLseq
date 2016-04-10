@@ -1,5 +1,6 @@
 """Implements ModelNormalGibbs2."""
 
+import ctypes as _ctp
 import numpy as _nmp
 import numpy.random as _rnd
 
@@ -48,7 +49,7 @@ class ModelNormalGibbs2(object):
         eta = self.eta[self.idxs_markers]
 
         # sample beta and tau
-        beta = _sample_beta(Y, G, beta, tau, zeta, eta)
+        beta = _sample_beta2(Y, G, beta, tau, zeta, eta)
         self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
 
         # sample tau, eta and zeta
@@ -109,10 +110,48 @@ def _sample_beta(Y, G, beta, tau, zeta, eta):
 
     idxs = _rnd.permutation(n_markers)
     for idx in idxs:
-        idxs2 = idx != _nmp.arange(n_markers)
-        beta[:, idx] = _sample_beta_one(Y, G[:, idx], G[:, idxs2], beta[:, idxs2], tau, zeta[:, idx], eta[idx])
+        not_idx = idx != _nmp.arange(n_markers)
+        beta[:, idx] = _sample_beta_one(Y, G[:, idx], G[:, not_idx], beta[:, not_idx], tau, zeta[:, idx], eta[idx])
 
     ##
+    return beta
+
+
+_lib = _nmp.ctypeslib.load_library('libmdlnorm', 'eQTLseq')
+_lib.sample_beta.restype = None
+_lib.sample_beta.argtypes = [
+    _nmp.ctypeslib.ndpointer('float', ndim=2, flags=('C_CONTIGUOUS', 'ALIGNED')),
+    _nmp.ctypeslib.ndpointer('float', ndim=2, flags=('C_CONTIGUOUS', 'ALIGNED')),
+    _nmp.ctypeslib.ndpointer('float', ndim=2, flags=('C_CONTIGUOUS', 'ALIGNED', 'WRITEABLE')),
+    _nmp.ctypeslib.ndpointer('float', ndim=1, flags=('C_CONTIGUOUS', 'ALIGNED')),
+    _nmp.ctypeslib.ndpointer('float', ndim=2, flags=('C_CONTIGUOUS', 'ALIGNED')),
+    _nmp.ctypeslib.ndpointer('float', ndim=1, flags=('C_CONTIGUOUS', 'ALIGNED')),
+    _nmp.ctypeslib.ndpointer('float', ndim=2, flags=('C_CONTIGUOUS', 'ALIGNED')),
+    _nmp.ctypeslib.ndpointer('intp', ndim=1, flags=('C_CONTIGUOUS', 'ALIGNED')),
+    _ctp.c_ssize_t, _ctp.c_ssize_t, _ctp.c_ssize_t
+]
+
+
+def _sample_beta2(Y, G, beta, tau, zeta, eta):
+    """TODO."""
+    n_samples, n_markers = G.shape
+    _, n_genes = Y.shape
+
+    rnds = _rnd.randn(n_genes, n_markers)
+    idxs = _rnd.permutation(n_markers)
+
+    Y = _nmp.require(Y.T, dtype='float', requirements=('C_CONTIGUOUS', 'ALIGNED'))
+    G = _nmp.require(G.T, dtype='float', requirements=('C_CONTIGUOUS', 'ALIGNED'))
+    beta = _nmp.require(beta, dtype='float', requirements=('C_CONTIGUOUS', 'ALIGNED', 'WRITEABLE'))
+    tau = _nmp.require(tau, dtype='float', requirements=('C_CONTIGUOUS', 'ALIGNED'))
+    zeta = _nmp.require(zeta, dtype='float', requirements=('C_CONTIGUOUS', 'ALIGNED'))
+    eta = _nmp.require(eta, dtype='float', requirements=('C_CONTIGUOUS', 'ALIGNED'))
+    rnds = _nmp.require(rnds, dtype='float', requirements=('C_CONTIGUOUS', 'ALIGNED'))
+    idxs = _nmp.require(idxs, dtype='intp', requirements=('C_CONTIGUOUS', 'ALIGNED'))
+
+    _lib.sample_beta(Y, G, beta, tau, zeta, eta, rnds, idxs, n_samples, n_genes, n_markers)
+
+    #
     return beta
 
 
