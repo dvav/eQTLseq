@@ -218,7 +218,7 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     beta_true[_nmp.abs(beta_true) < beta_thr] = 0
 
     # sum of squared residuals
-    resid2 = _nmp.sum((beta - beta_true)**2)
+    RSS = _nmp.sum((beta - beta_true)**2)
 
     # matrix of hits
     hits = _nmp.abs(_nmp.sign(beta))
@@ -232,12 +232,36 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
 
     assert TP + TN + FP + FN == beta.size
 
-    # Matthew's correlation coefficient, accuracy, F1, sensitivity, specificity
-    MCC = (TP * TN - FP * FN) / _nmp.sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN))
-    ACC = (TP + TN) / (TP + FP + FN + TN)
-    F1 = 2 * TP / (2 * TP + FP + FN)
-    SN = TP / (TP + FN)
-    SP = TN / (TN + FP)
+    # various metrics
+    TPR = TP / (TP + FN)  # true positive rate
+    TNR = TN / (TN + FP)  # true negative rate
+    PPV = TP / (TP + FP)  # positive predictive value
+    NPV = TN / (TN + FN)  # negative predictive value
+    FPR = FP / (FP + TN)  # false positive rate
+    FDR = FP / (FP + TP)  # false discovery rate
+    FNR = FN / (FN + TP)  # false negative rate
+
+    MCC = (TP * TN - FP * FN) / _nmp.sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN))  # Matthew's correlation coefficient
+    ACC = (TP + TN) / (TP + FP + FN + TN)  # accuracy
+    F1 = 2 * TPR * PPV / (TPR + PPV)  # F1 score
+    G = _nmp.sqrt(TPR * PPV)  # G score
 
     #
-    return resid2, MCC, ACC, F1, SN, SP, TP, TN, FP, FN
+    return {
+        'RSS': RSS,
+        'MCC': MCC,
+        'ACC': ACC,
+        'F1': F1,
+        'G': G,
+        'TPR': TPR,
+        'TNR': TNR,
+        'PPV': PPV,
+        'NPV': NPV,
+        'FPR': FPR,
+        'FDR': FDR,
+        'FNR': FNR,
+        'TP': TP,
+        'TN': TN,
+        'FP': FP,
+        'FN': FN
+    }

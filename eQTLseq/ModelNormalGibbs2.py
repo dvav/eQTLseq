@@ -49,7 +49,7 @@ class ModelNormalGibbs2(object):
         eta = self.eta[self.idxs_markers]
 
         # sample beta and tau
-        beta = _sample_beta2(Y, G, beta, tau, zeta, eta)
+        beta = _sample_beta(Y, G, beta, tau, zeta, eta)
         self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
 
         # sample tau, eta and zeta
