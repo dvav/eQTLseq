@@ -39,7 +39,7 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
         super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=args['n_burnin'], beta_thr=args['beta_thr'],
-                       s2_lims=args['s2_lims'], n_samples=args['n_samples'])
+                       s2_lims=args['s2_lims'], n_samples=args['n_samples'], parallel=args['parallel'])
 
         if(itr > args['n_burnin']):
             self.mu_sum += self.mu

@@ -38,11 +38,12 @@ def sample_multivariate_normal_one(L, b, z):
     return y + mu
 
 
-def sample_multivariate_normal_many(b, A):
+def sample_multivariate_normal_many(b, A, parallel):
     """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
     z = _rnd.normal(size=b.shape)
     L = _nmp.linalg.cholesky(A)
-    y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)]
+    # y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)]
+    y = parallel.starmap(sample_multivariate_normal_one, zip(L, b, z))
 
     # return
     return _nmp.asarray(y)
@@ -217,8 +218,9 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     beta[_nmp.abs(beta) < beta_thr] = 0
     beta_true[_nmp.abs(beta_true) < beta_thr] = 0
 
-    # sum of squared residuals
+    # sum of squared residuals and R2
     RSS = _nmp.sum((beta - beta_true)**2)
+    R2 = 1 - RSS / _nmp.sum((_nmp.mean(beta_true) - beta_true)**2)
 
     # matrix of hits
     hits = _nmp.abs(_nmp.sign(beta))
@@ -249,6 +251,7 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     #
     return {
         'RSS': RSS,
+        'R2': R2,
         'MCC': MCC,
         'ACC': ACC,
         'F1': F1,

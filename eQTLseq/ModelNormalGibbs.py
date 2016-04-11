@@ -46,7 +46,7 @@ class ModelNormalGibbs(object):
         eta = self.eta[self.idxs_markers]
 
         # sample beta and tau
-        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, args['n_samples'], s2_lims)
+        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, args['n_samples'], s2_lims, args['parallel'])
 
         self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
         self.tau[self.idxs_genes] = tau
@@ -89,7 +89,7 @@ class ModelNormalGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
 
-def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
+def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims, parallel):
     """TODO."""
     _, n_markers = zeta.shape
 
@@ -102,7 +102,7 @@ def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
     # sample beta
     A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
     b = tau * GTY
-    beta = _utils.sample_multivariate_normal_many(b.T, A)
+    beta = _utils.sample_multivariate_normal_many(b.T, A, parallel)
 
     ##
     return beta, tau

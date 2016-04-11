@@ -41,13 +41,13 @@ class ModelNBinomGibbs2(_ModelNormalGibbs):
         # sample Y
         # self.Y = args['YY']
         self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
-        self.Y = (self.Y - _nmp.mean(self.Y, 0)) / _nmp.std(self.Y, 0)
+        self.Y = (self.Y - _nmp.mean(self.Y, 0)) #/ _nmp.std(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
         super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=args['n_burnin'], beta_thr=args['beta_thr'],
-                       s2_lims=args['s2_lims'], n_samples=args['n_samples'])
+                       s2_lims=args['s2_lims'], n_samples=args['n_samples'], parallel=args['parallel'])
 
         # sample mu_phi and tau_phi
         self.mu_phi, self.tau_phi = _sample_mu_tau_phi(self.phi)

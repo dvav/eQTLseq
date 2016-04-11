@@ -3,6 +3,7 @@
 import sys as _sys
 
 import numpy as _nmp
+import multiprocessing as _mlp
 
 from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
@@ -21,7 +22,7 @@ import eQTLseq.utils as _utils
 
 
 def run(Z, G, mdl='Normal', alg='Gibbs', trans=None, std=True, norm_factors=None, n_iters=1000, n_burnin=None,
-        beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol_abs=1e-6, tol_rel=1e-3, **extra):
+        beta_thr=1e-6, s2_lims=(1e-20, 1e3), tol_abs=1e-6, tol_rel=1e-3, n_threads=1, **extra):
     """Run an estimation algorithm for a specified number of iterations."""
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
     assert mdl in ('Normal', 'Normal2', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3', 'NBinomial4')
@@ -84,23 +85,24 @@ def run(Z, G, mdl='Normal', alg='Gibbs', trans=None, std=True, norm_factors=None
     mdl = Model(**args)
 
     # loop
-    print('\r' + 'Iteration {0} of {1}'.format(0, n_iters), end='', file=_sys.stderr)
     state = _nmp.empty(n_iters + 1)
     state.fill(_nmp.nan)
     state[0] = 0
-    for itr in range(1, n_iters + 1):
-        # update
-        mdl.update(itr, **args)
-        state[itr] = mdl.get_state(**args)
+    print('\r' + 'Iteration {0} of {1}'.format(0, n_iters), end='', file=_sys.stderr)
+    with _mlp.Pool(processes=n_threads) as parallel:
+        for itr in range(1, n_iters + 1):
+            # update
+            mdl.update(itr, parallel=parallel, **args)
+            state[itr] = mdl.get_state(**args)
 
-        # log
-        print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
+            # log
+            print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
 
-        # # error
-        # err_abs = _nmp.abs(state[itr] - state[itr-1])
-        # err_rel = _nmp.abs((state[itr] - state[itr-1])/state[itr-1])
-        # if err_abs < tol_abs and err_rel < tol_rel:
-        #     break
+            # # error
+            # err_abs = _nmp.abs(state[itr] - state[itr-1])
+            # err_rel = _nmp.abs((state[itr] - state[itr-1])/state[itr-1])
+            # if err_abs < tol_abs and err_rel < tol_rel:
+            #     break
 
     print('\nDone!', file=_sys.stderr)
 
