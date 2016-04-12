@@ -11,10 +11,10 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
     def __init__(self, **args):
         """TODO."""
-        Z, c, n_markers = args['Z'], args['norm_factors'], args['n_markers']
-        n_samples, n_genes = Z.shape
+        super().__init__(**args)
 
-        super().__init__(n_genes=n_genes, n_markers=n_markers)
+        Z, c = args['Z'], args['norm_factors']
+        n_samples, n_genes = Z.shape
 
         # initial conditions
         self.Y = _rnd.randn(n_samples, n_genes)
@@ -24,21 +24,19 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G, GTG, norm_factors = args['Z'], args['G'], args['GTG'], args['norm_factors']
+        Z, G, norm_factors = args['Z'], args['G'], args['norm_factors']
 
         # sample mu
         self.mu = _sample_mu(Z, norm_factors, self.Y)
 
         # sample Y
-        # self.Y = args['YY']
         self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.Y, self.beta, self.tau)
         self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTG=GTG, GTY=GTY, n_burnin=args['n_burnin'], beta_thr=args['beta_thr'],
-                       s2_lims=args['s2_lims'], n_samples=args['n_samples'], parallel=args['parallel'])
+        super().update(itr, YTY=YTY, GTY=GTY, **args)
 
         if(itr > args['n_burnin']):
             self.mu_sum += self.mu
@@ -55,10 +53,7 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
         extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
 
-        return dict(
-            mu=mu_mean, mu_var=mu_var,
-            **extra
-        )
+        return {'mu': mu_mean, 'mu_var': mu_var, **extra}
 
     def get_log_likelihood(self, **args):
         """TODO."""
@@ -79,31 +74,7 @@ def _sample_mu(Z, c, Y, a0=0.5, b0=0.5):
     return mu
 
 
-def _sample_Y_local(Z, G, c, mu, Y, beta, tau, scale=0.01):
-    n_samples, n_genes = Z.shape
-    GBT = G.dot(beta.T)
-    Z = Z / c[:, None]
-    n = Z.sum(1)
-
-    # sample proposals from a log-normal with small scale
-    pi = mu / (mu + _nmp.exp(-Y))
-
-    Y_ = Y * _nmp.exp(scale * _rnd.randn(n_samples, n_genes))
-    pi_ = mu / (mu + _nmp.exp(-Y_))
-
-    # compute loglik
-    logpost = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log1p(-pi) - 0.5 * tau * (Y - GBT)**2
-    logpost_ = Z * _nmp.log(pi_) + (n[:, None] - Z) * _nmp.log1p(-pi_) - 0.5 * tau * (Y_ - GBT)**2
-
-    # do Metropolis step
-    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(logpost_ - logpost)
-    Y[idxs] = Y_[idxs]
-
-    #
-    return Y
-
-
-def _sample_Y_global(Z, G, c, mu, Y, beta, tau):
+def _sample_Y(Z, G, c, mu, Y, beta, tau):
     n_samples, n_genes = Z.shape
     Z = Z / c[:, None]
     n = Z.sum(1)
@@ -121,17 +92,6 @@ def _sample_Y_global(Z, G, c, mu, Y, beta, tau):
     # do Metropolis step
     idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(loglik_ - loglik)
     Y[idxs] = Y_[idxs]
-
-    #
-    return Y
-
-
-def _sample_Y(Z, G, norm_factors, mu, Y, beta, tau):
-    """TODO."""
-    # if _rnd.rand() < 0.5:
-    #     Y = _sample_Y_local(Z, G, norm_factors, mu, Y, beta, tau)
-    # else:
-    Y = _sample_Y_global(Z, G, norm_factors, mu, Y, beta, tau)
 
     #
     return Y

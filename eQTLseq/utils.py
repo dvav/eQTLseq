@@ -144,7 +144,7 @@ def transform_data(Z, norm_factors, kind='Blom'):
     fcn = {
         'Log': lambda x: _nmp.log(x + 1),
         'BoxCox': lambda x: _nmp.asarray([_stats.boxcox(_ + 1)[0] for _ in x]),
-        'Blom': lambda x: blom(x + _rnd.rand(*x.shape)*1e-6)  # add small random numbers to avoid spurious ties
+        'Blom': lambda x: blom(x)  # add small random numbers to avoid spurious ties _rnd.rand(*x.shape)*1e-6
     }[kind]
 
     Z = Z / norm_factors[:, None]
@@ -173,15 +173,18 @@ def simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h
 
     # sample causal markers and affected genes
     idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
-    idxs_genes_affected = _nmp.hstack([
-        _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
-    ])
+    idxs_genes_affected = _rnd.choice(n_genes, n_genes_affected, replace=False)
+    # idxs_genes_affected = _nmp.hstack([
+    #     _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
+    # ])
 
     # compute causal coefficients
-    s2g = h2 * s2e / (1 - h2)
+    s2e = _rnd.uniform(s2e[0], s2e[1], n_genes)
+    h2 = _rnd.uniform(h2[0], h2[1], n_genes_affected)
+    s2g = h2 * s2e[idxs_genes_affected] / (1 - h2)
     beta = _nmp.zeros((n_genes, n_markers))
-    beta[idxs_genes_affected, idxs_markers_causal] = \
-        _rnd.normal(0, _nmp.sqrt(s2g / n_markers_causal), (n_genes_affected, n_markers_causal))
+    beta[_nmp.ix_(idxs_genes_affected, idxs_markers_causal)] = \
+        _rnd.normal(0, _nmp.sqrt(s2g[:, None] / n_markers_causal), (n_genes_affected, n_markers_causal))
 
     # compute phenotype
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
@@ -191,7 +194,8 @@ def simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e, h
     return {'Y': Y, 'beta': beta}
 
 
-def simulate_eQTLs_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2e=1, h2=0.5):
+def simulate_eQTLs_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10,
+                          s2e=(0.5, 0.5), h2=(0.1, 0.6)):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size if n_genes is None else n_genes
@@ -219,8 +223,9 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     beta_true[_nmp.abs(beta_true) < beta_thr] = 0
 
     # sum of squared residuals and R2
-    RSS = _nmp.sum((beta - beta_true)**2)
-    R2 = 1 - RSS / _nmp.sum((_nmp.mean(beta_true) - beta_true)**2)
+    RSS = ((beta - beta_true)**2).sum()
+    TSS = ((_nmp.mean(beta_true) - beta_true)**2).sum()
+    R2 = 1 - RSS / TSS
 
     # matrix of hits
     hits = _nmp.abs(_nmp.sign(beta))

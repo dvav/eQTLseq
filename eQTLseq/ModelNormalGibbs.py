@@ -19,9 +19,6 @@ class ModelNormalGibbs(object):
         self.zeta = _nmp.ones((n_genes, n_markers))
         self.beta = _rnd.randn(n_genes, n_markers)
 
-        self.idxs_markers = _nmp.ones(n_markers, dtype='bool')
-        self.idxs_genes = _nmp.ones(n_genes, dtype='bool')
-
         self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
         self.eta_sum, self.eta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
@@ -30,32 +27,34 @@ class ModelNormalGibbs(object):
     def update(self, itr, **args):
         """TODO."""
         YTY, GTG, GTY = args['YTY'], args['GTG'], args['GTY']
-        beta_thr, s2_lims = args['beta_thr'], args['s2_lims']
+        beta_thr, s2_lims, n_samples, n_genes = args['beta_thr'], args['s2_lims'], args['n_samples'], args['n_genes']
+        parallel = args['parallel']
+        phi = args['phi'] if 'phi' in args else _nmp.ones(n_genes)
 
         # identify irrelevant genes and markers and exclude them
-        idxs = (_nmp.abs(self.beta) > beta_thr) & (self.zeta * self.eta * self.tau[:, None] < 1 / s2_lims[0])
+        idxs = (_nmp.abs(self.beta) > beta_thr) & (self.zeta * self.eta * (self.tau / phi)[:, None] < 1 / s2_lims[0])
         idxs[[0, 1], [0, 1]] = True  # just a precaution
-        self.idxs_markers = _nmp.any(idxs, 0)
-        self.idxs_genes = _nmp.any(idxs, 1)
+        idxs_markers = _nmp.any(idxs, 0)
+        idxs_genes = _nmp.any(idxs, 1)
 
-        YTY = YTY[self.idxs_genes]
-        GTG = GTG[:, self.idxs_markers][self.idxs_markers, :]
-        GTY = GTY[self.idxs_markers, :][:, self.idxs_genes]
+        YTY = YTY[idxs_genes]
+        GTG = GTG[:, idxs_markers][idxs_markers, :]
+        GTY = GTY[idxs_markers, :][:, idxs_genes]
 
-        zeta = self.zeta[self.idxs_genes, :][:, self.idxs_markers]
-        eta = self.eta[self.idxs_markers]
+        zeta = self.zeta[idxs_genes, :][:, idxs_markers]
+        eta = self.eta[idxs_markers]
 
         # sample beta and tau
-        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, args['n_samples'], s2_lims, args['parallel'])
+        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, phi[idxs_genes], n_samples, s2_lims, parallel)
 
-        self.beta[_nmp.ix_(self.idxs_genes, self.idxs_markers)] = beta
-        self.tau[self.idxs_genes] = tau
+        self.beta[_nmp.ix_(idxs_genes, idxs_markers)] = beta
+        self.tau[idxs_genes] = tau
 
         # sample eta and zeta
-        self.zeta = _sample_zeta(self.beta, self.tau, self.eta)
+        self.zeta = _sample_zeta(self.beta, self.tau, self.eta, phi)
         self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        self.eta = _sample_eta(self.beta, self.tau, self.zeta)
+        self.eta = _sample_eta(self.beta, self.tau, self.zeta, phi)
         self.eta = _nmp.clip(self.eta, 1 / s2_lims[1], 1 / s2_lims[0])
 
         if(itr > args['n_burnin']):
@@ -89,43 +88,46 @@ class ModelNormalGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
 
-def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims, parallel):
+def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, phi, n_samples, s2_lims, parallel):
     """TODO."""
     _, n_markers = zeta.shape
 
     # sample tau
     shape = 0.5 * (n_samples + n_markers)
-    rate = 0.5 * YTY
+    rate = 0.5 * YTY / phi
     tau = _rnd.gamma(shape, 1 / rate)
     tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
 
     # sample beta
-    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
-    b = tau * GTY
+    theta = tau / phi
+    A = theta[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
+    b = theta * GTY
     beta = _utils.sample_multivariate_normal_many(b.T, A, parallel)
 
     ##
     return beta, tau
 
 
-def _sample_zeta(beta, tau, eta):
+def _sample_zeta(beta, tau, eta, phi):
     """TODO."""
     # sample zeta
+    theta = tau / phi
     shape = 0.5
-    rate = 0.5 * eta * beta**2 * tau[:, None]
+    rate = 0.5 * eta * beta**2 * theta[:, None]
     zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
 
     ##
     return zeta
 
 
-def _sample_eta(beta, tau, zeta):
+def _sample_eta(beta, tau, zeta, phi):
     """TODO."""
     n_genes, _ = zeta.shape
 
     # sample zeta
+    theta = tau / phi
     shape = 0.5 * n_genes
-    rate = 0.5 * (zeta * beta**2 * tau[:, None]).sum(0)
+    rate = 0.5 * (zeta * beta**2 * theta[:, None]).sum(0)
     eta = _rnd.gamma(shape, 1 / rate)
 
     ##
