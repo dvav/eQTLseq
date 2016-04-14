@@ -39,6 +39,7 @@ def run(Z, G, mdl='Normal', trans=None, std=True, norm_factors=None, n_iters=100
         'n_burnin': n_burnin,
         'beta_thr': beta_thr,
         's2_lims': s2_lims,
+        'std': std,
         'Z': Z,
         'G': G,
         'norm_factors': norm_factors,
