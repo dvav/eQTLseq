@@ -46,8 +46,8 @@ def sample_multivariate_normal_many(b, A, parallel):
     """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
     z = _rnd.normal(size=b.shape)
     L = _nmp.linalg.cholesky(A)
-    # y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)]
-    y = parallel.starmap(sample_multivariate_normal_one, zip(L, b, z))
+    y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)] if parallel is None else \
+        parallel.starmap(sample_multivariate_normal_one, zip(L, b, z))
 
     # return
     return _nmp.asarray(y)
@@ -81,14 +81,15 @@ def sample_nbinom(mu, phi, size=None):
 def calculate_norm_factors(read_counts, locfcn=_nmp.median):
     """Normalise RNA-seq counts data using the Relative Log Expression (RLE) method, as in DESeq."""
     # compute geometric mean of each row in log-scale
-    logcounts = _nmp.log(read_counts)
+    logcounts = _nmp.log(read_counts + _nmp.finfo('float').tiny)  # add a tiny number to avoid division by zero
     logmeans = _nmp.mean(logcounts, 1)
 
     # take the ratios
     logcounts -= logmeans[:, None]
 
-    # get median (or other central tendency metric) of ratios excluding rows with 0 mean
-    logcounts = logcounts[_nmp.isfinite(logmeans), :]
+    # get median (or other central tendency metric) of ratios excluding rows with at least one zero entry
+    idxs = _nmp.all(read_counts > 0, 1)
+    logcounts = logcounts[idxs, :]
     norm_factors = _nmp.exp(locfcn(logcounts, 0))
 
     #
@@ -132,10 +133,20 @@ def fit_nbinom_model(read_counts, normalised=False):
 
 def blom(Z, c=3/8):
     """TODO."""
-    _, N = Z.shape
-    R = _nmp.asarray([_stats.rankdata(_) for _ in Z])
+    N, _ = Z.shape
+    R = _nmp.asarray([_stats.rankdata(_) for _ in Z.T])
     P = (R - c) / (N - 2 * c + 1)
     Y = _nmp.sqrt(2) * _spc.erfinv(2 * P - 1)    # probit function
+
+    #
+    return Y.T
+
+
+def vst(Z):
+    """TODO."""
+    vst = _R.r('DESeq2::varianceStabilizingTransformation')
+    res = vst(Z)
+    Y = _nmp.asarray(res)
 
     #
     return Y
@@ -144,36 +155,25 @@ def blom(Z, c=3/8):
 def voom(Z):
     """TODO."""
     voom = _R.r('limma::voom')
-    res = voom(Z.T)
-    Y = _nmp.asarray(res[0]).T
+    res = voom(Z)
+    Y = _nmp.asarray(res[0])
 
     #
     return Y
 
 
-def vst(Z):
-    """TODO."""
-    vst = _R.r('DESeq2::varianceStabilizingTransformation')
-    res = vst(Z.T)
-    Y = _nmp.asarray(res).T
-
-    #
-    return Y
-
-
-def transform_data(Z, norm_factors, kind='log'):
+def transform_data(Z, kind='log'):
     """TODO."""
     assert kind in ('blom', 'boxcox', 'log', 'vst', 'voom')
 
     fcn = {
         'log': lambda x: _nmp.log(x + 1),
-        'boxcox': lambda x: _nmp.asarray([_stats.boxcox(_ + 1)[0] for _ in x]),
-        'blom': lambda x: blom(x),  # add small random numbers to avoid spurious ties _rnd.rand(*x.shape)*1e-6
-        'voom': lambda x: voom(x),
-        'vst': lambda x: vst(x)
+        'boxcox': lambda x: _nmp.asarray([_stats.boxcox(_ + 1)[0] for _ in x.T]).T,
+        'blom': lambda x: blom(x + _rnd.rand(*x.shape)*1e-6),  # add small random numbers to avoid spurious ties
+        'vst': lambda x: vst(x),
+        'voom': lambda x: voom(x)
     }[kind]
 
-    Z = Z / norm_factors[:, None]
     Y = fcn(Z)
 
     #
@@ -193,33 +193,7 @@ def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e=1, h2=(0.1, 0.6)):
-    """Simulate eQTLs with normally distributed gene expression data."""
-    _, n_markers = G.shape
-
-    # sample causal markers and affected genes
-    idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
-    idxs_genes_affected = _rnd.choice(n_genes, n_genes_affected, replace=False)
-    # idxs_genes_affected = _nmp.hstack([
-    #     _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
-    # ])
-
-    # compute causal coefficients
-    h2 = _rnd.uniform(h2[0], h2[1], n_genes_affected)
-    s2g = h2 * s2e / (1 - h2)
-    beta = _nmp.zeros((n_genes, n_markers))
-    beta[_nmp.ix_(idxs_genes_affected, idxs_markers_causal)] = \
-        _rnd.normal(0, _nmp.sqrt(s2g[:, None] / n_markers_causal), (n_genes_affected, n_markers_causal))
-
-    # compute phenotype
-    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-    Y = _rnd.normal(G.dot(beta.T), _nmp.sqrt(s2e))
-
-    #
-    return {'Y': Y, 'beta': beta}
-
-
-def simulate_eQTLs_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2=1):
+def simulate_eQTLs(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2=1):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size if n_genes is None else n_genes
@@ -244,50 +218,15 @@ def simulate_eQTLs_nbinom(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
     Z = sample_nbinom(mu * _nmp.exp(G.dot(beta.T)), phi)
 
-    #
-    return {'Z': Z, 'mu': mu, 'phi': phi, 'beta': beta}
-
-
-def simulate_eQTLs(Z0, G0, n_samples=None, n_markers=None, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2=1):
-    """Simulate eQTLs based on given matrices of count and genotype data."""
-    n_samples1, n_genes_max = Z0.shape
-    n_samples2, n_markers_max = G0.shape
-
-    n_samples = min(n_samples1, n_samples2) if n_samples is None else n_samples
-    n_genes = n_genes_max if n_genes is None else n_genes
-    n_markers = n_markers_max if n_markers is None else n_markers
-
-    assert n_genes <= n_genes_max
-    assert n_markers <= n_markers_max
-    assert n_markers_causal < n_markers
-    assert n_genes_affected < n_genes
-
-    # form Z and G
-    min_samples = min(n_samples1, n_samples2)
-    if n_samples <= min_samples:
-        idxs_samples = _rnd.choice(min_samples, n_samples, replace=False)
-    else:
-        idxs_samples = _nmp.r_[0:min_samples, _rnd.choice(min_samples, n_samples-min_samples, replace=True)]
-    idxs_markers = _rnd.choice(n_markers_max, n_markers, replace=False)
-    idxs_genes = _rnd.choice(n_genes_max, n_genes, replace=False)
-    Z = Z0[idxs_samples, :][:, idxs_genes]
-    G = G0[idxs_samples, :][:, idxs_markers]
-
-    # sample causal markers and affected genes
-    idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
-    idxs_genes_affected = _rnd.choice(n_genes, n_genes_affected, replace=False)
-
-    # compute causal coefficients
-    beta = _nmp.zeros((n_genes, n_markers))
-    beta[_nmp.ix_(idxs_genes_affected, idxs_markers_causal)] = \
-        _rnd.normal(0, _nmp.sqrt(s2 / n_markers_causal), (n_genes_affected, n_markers_causal))
-
-    # compute phenotype
-    Gn = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-    Z = _nmp.rint(Z * _nmp.exp(_nmp.exp(Gn.dot(beta.T))))
+    # remove genes with zero variance
+    idxs = _nmp.std(Z, 0) > 0
+    Z = Z[:, idxs]
+    mu = mu[idxs]
+    phi = phi[idxs]
+    beta = beta[idxs, :]
 
     #
-    return {'Z': Z, 'G': G, 'beta': beta}
+    return {'Z': Z.T, 'mu': mu, 'phi': phi, 'beta': beta}
 
 
 def calculate_metrics(beta, beta_true, beta_thr=1e-6):
@@ -313,7 +252,7 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     FP = _nmp.sum((hits == 1) & (hits_true == 0))
     FN = _nmp.sum((hits == 0) & (hits_true == 1))
 
-    assert TP + TN + FP + FN == beta.size
+    # assert TP + TN + FP + FN == beta.size
 
     # various metrics
     TPR = TP / (TP + FN)  # true positive rate

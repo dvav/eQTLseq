@@ -128,3 +128,71 @@ def _simulate_eQTLs_nbinom(**args):
 
     #
     return {'Z': Z, 'mu': mu, 'phi': phi, 'coefs': res['coefs'], 'Y': res['Y']}
+
+
+def simulate_eQTLs(Z0, G0, n_samples=None, n_markers=None, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2=1):
+    """Simulate eQTLs based on given matrices of count and genotype data."""
+    n_samples1, n_genes_max = Z0.shape
+    n_samples2, n_markers_max = G0.shape
+
+    n_samples = min(n_samples1, n_samples2) if n_samples is None else n_samples
+    n_genes = n_genes_max if n_genes is None else n_genes
+    n_markers = n_markers_max if n_markers is None else n_markers
+
+    assert n_genes <= n_genes_max
+    assert n_markers <= n_markers_max
+    assert n_markers_causal < n_markers
+    assert n_genes_affected < n_genes
+
+    # form Z and G
+    min_samples = min(n_samples1, n_samples2)
+    if n_samples <= min_samples:
+        idxs_samples = _rnd.choice(min_samples, n_samples, replace=False)
+    else:
+        idxs_samples = _nmp.r_[0:min_samples, _rnd.choice(min_samples, n_samples-min_samples, replace=True)]
+    idxs_markers = _rnd.choice(n_markers_max, n_markers, replace=False)
+    idxs_genes = _rnd.choice(n_genes_max, n_genes, replace=False)
+    Z = Z0[idxs_samples, :][:, idxs_genes]
+    G = G0[idxs_samples, :][:, idxs_markers]
+
+    # sample causal markers and affected genes
+    idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
+    idxs_genes_affected = _rnd.choice(n_genes, n_genes_affected, replace=False)
+
+    # compute causal coefficients
+    beta = _nmp.zeros((n_genes, n_markers))
+    beta[_nmp.ix_(idxs_genes_affected, idxs_markers_causal)] = \
+        _rnd.normal(0, _nmp.sqrt(s2 / n_markers_causal), (n_genes_affected, n_markers_causal))
+
+    # compute phenotype
+    Gn = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+    Z = _nmp.rint(Z * _nmp.exp(_nmp.exp(Gn.dot(beta.T))))
+
+    #
+    return {'Z': Z, 'G': G, 'beta': beta}
+
+
+def simulate_eQTLs_normal(G, n_markers_causal, n_genes, n_genes_affected, s2e=1, h2=(0.1, 0.6)):
+    """Simulate eQTLs with normally distributed gene expression data."""
+    _, n_markers = G.shape
+
+    # sample causal markers and affected genes
+    idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
+    idxs_genes_affected = _rnd.choice(n_genes, n_genes_affected, replace=False)
+    # idxs_genes_affected = _nmp.hstack([
+    #     _rnd.choice(n_genes, (n_genes_affected, 1), replace=False) for _ in range(n_markers_causal)
+    # ])
+
+    # compute causal coefficients
+    h2 = _rnd.uniform(h2[0], h2[1], n_genes_affected)
+    s2g = h2 * s2e / (1 - h2)
+    beta = _nmp.zeros((n_genes, n_markers))
+    beta[_nmp.ix_(idxs_genes_affected, idxs_markers_causal)] = \
+        _rnd.normal(0, _nmp.sqrt(s2g[:, None] / n_markers_causal), (n_genes_affected, n_markers_causal))
+
+    # compute phenotype
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+    Y = _rnd.normal(G.dot(beta.T), _nmp.sqrt(s2e))
+
+    #
+    return {'Y': Y.T, 'beta': beta}

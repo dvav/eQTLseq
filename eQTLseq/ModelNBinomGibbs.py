@@ -14,33 +14,33 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
         """TODO."""
         super().__init__(**args)
 
-        Z, c = args['Z'], args['norm_factors']
+        Z = args['Z']
         n_samples, n_genes = Z.shape
 
         # initial conditions
         self.Y = _rnd.randn(n_samples, n_genes)
 
         self.mu_phi, self.tau_phi, self.phi = 0, 1, _nmp.exp(_rnd.randn(n_genes))
-        self.mu = _nmp.mean(Z / c[:, None] * _nmp.exp(-self.Y), 0)
+        self.mu = _nmp.mean(Z * _nmp.exp(-self.Y), 0)
 
         self.phi_sum, self.phi2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G, norm_factors = args['Z'], args['G'], args['norm_factors']
+        Z, G = args['Z'], args['G']
 
         # sample mu and phi
-        self.mu = _sample_mu(Z, norm_factors, self.phi, self.Y)
-        self.phi = _sample_phi(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau, self.zeta, self.eta,
+        self.mu = _sample_mu(Z, self.phi, self.Y)
+        self.phi = _sample_phi(Z, G, self.mu, self.phi, self.Y, self.beta, self.tau, self.zeta, self.eta,
                                self.mu_phi, self.tau_phi)
 
         # sample mu_phi and tau_phi
         self.mu_phi, self.tau_phi = _sample_mu_tau_phi(self.phi)
 
         # sample Y
-        self.Y = _sample_Y(Z, G, norm_factors, self.mu, self.phi, self.Y, self.beta, self.tau)
-        self.Y = (self.Y - _nmp.mean(self.Y, 0)) / _nmp.std(self.Y, 0) if args['std'] \
+        self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta, self.tau)
+        self.Y = (self.Y - _nmp.mean(self.Y, 0)) / _nmp.std(self.Y, 0) if args['scale'] \
             else (self.Y - _nmp.mean(self.Y, 0))
 
         # update beta, tau, zeta and eta
@@ -72,9 +72,9 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
         return super().get_state()
 
 
-def _sample_phi(Z, G, c, mu, phi, Y, beta, tau, zeta, eta, mu_phi, tau_phi):
+def _sample_phi(Z, G, mu, phi, Y, beta, tau, zeta, eta, mu_phi, tau_phi):
     n_samples, n_genes = Z.shape
-    means = c[:, None] * mu * _nmp.exp(Y)
+    means = mu * _nmp.exp(Y)
     GBT = G.dot(beta.T)
     resid2 = (Y - GBT)**2
 
@@ -99,17 +99,19 @@ def _sample_phi(Z, G, c, mu, phi, Y, beta, tau, zeta, eta, mu_phi, tau_phi):
         - 0.5 * (log_phi_[:, None] + zeta * eta * theta_[:, None] * beta**2).sum(1)
 
     # Metropolis step
-    idxs = _rnd.rand(n_genes) < _nmp.exp(loglik_ - loglik)
+    diff = loglik_ - loglik
+    diff[diff > 100] = 100  # avoid overflows in exp below
+    idxs = _rnd.rand(n_genes) < _nmp.exp(diff)
     phi[idxs] = phi_[idxs]
 
     #
     return phi
 
 
-def _sample_mu(Z, c, phi, Y, a=0.5, b=0.5):
+def _sample_mu(Z, phi, Y, a=0.5, b=0.5):
     n_samples, _ = Z.shape
 
-    Z = Z / c[:, None] * _nmp.exp(-Y)
+    Z = Z * _nmp.exp(-Y)
     alpha = 1 / phi
 
     c1 = a + n_samples * alpha
@@ -141,22 +143,24 @@ def _sample_mu_tau_phi(phi):
     return mu_phi, tau_phi
 
 
-def _sample_Y(Z, G, c, mu, phi, Y, beta, tau):
+def _sample_Y(Z, G, mu, phi, Y, beta, tau):
     n_samples, n_genes = Z.shape
     alpha = 1 / phi
 
     # sample proposals from a normal prior
-    pi = alpha / (alpha + c[:, None] * mu * _nmp.exp(Y))
+    pi = alpha / (alpha + mu * _nmp.exp(Y))
 
     Y_ = _rnd.normal(G.dot(beta.T), _nmp.sqrt(phi / tau))
-    pi_ = alpha / (alpha + c[:, None] * mu * _nmp.exp(Y_))
+    pi_ = alpha / (alpha + mu * _nmp.exp(Y_))
 
     # compute loglik
     loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)
     loglik_ = alpha * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)
 
     # do Metropolis step
-    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(loglik_ - loglik)
+    diff = loglik_ - loglik
+    diff[diff > 100] = 100  # avoid overflows in exp below
+    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(diff)
     Y[idxs] = Y_[idxs]
 
     #
