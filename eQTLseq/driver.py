@@ -15,7 +15,7 @@ from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
 
 def run(Z, G, mdl='Normal', scale=True, n_iters=1000, n_burnin=None, beta_thr=1e-6, s2_lims=(1e-20, 1e3),
-        n_threads=1, **extra):
+        n_threads=1, progress=True, **extra):
     """Run an estimation algorithm for a specified number of iterations."""
     Z = Z.T
     n_threads = _mlp.cpu_count() if n_threads is None else n_threads
@@ -72,7 +72,8 @@ def run(Z, G, mdl='Normal', scale=True, n_iters=1000, n_burnin=None, beta_thr=1e
     for itr in range(1, n_iters + 1):
         mdl.update(itr, parallel=parallel, **args)
         state[itr] = mdl.get_state(**args)
-        print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
+        if progress:
+            print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
 
     if parallel is not None:
         parallel.close()

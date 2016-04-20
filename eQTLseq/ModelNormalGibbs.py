@@ -43,19 +43,24 @@ class ModelNormalGibbs(object):
 
         zeta = self.zeta[idxs_genes, :][:, idxs_markers]
         eta = self.eta[idxs_markers]
+        phi = phi[idxs_genes]
 
         # sample beta and tau
-        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, phi[idxs_genes], n_samples, s2_lims, parallel)
-
-        self.beta[_nmp.ix_(idxs_genes, idxs_markers)] = beta
-        self.tau[idxs_genes] = tau
+        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, phi, n_samples, s2_lims, parallel)
 
         # sample eta and zeta
-        self.zeta = _sample_zeta(self.beta, self.tau, self.eta, phi)
-        self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
+        zeta = _sample_zeta(beta, tau, eta, phi)
+        zeta = _nmp.clip(zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        self.eta = _sample_eta(self.beta, self.tau, self.zeta, phi)
-        self.eta = _nmp.clip(self.eta, 1 / s2_lims[1], 1 / s2_lims[0])
+        eta = _sample_eta(beta, tau, zeta, phi)
+        eta = _nmp.clip(eta, 1 / s2_lims[1], 1 / s2_lims[0])
+
+        # update
+        self.beta[_nmp.ix_(idxs_genes, idxs_markers)] = beta
+        self.beta[~idxs] = 0
+        self.tau[idxs_genes] = tau
+        self.zeta[_nmp.ix_(idxs_genes, idxs_markers)] = zeta
+        self.eta[idxs_markers] = eta
 
         if(itr > args['n_burnin']):
             self.tau_sum += self.tau

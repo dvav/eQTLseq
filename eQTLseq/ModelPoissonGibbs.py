@@ -31,8 +31,7 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
         # sample Y
         self.Y = _sample_Y(Z, G, self.mu, self.Y, self.beta, self.tau)
-        self.Y = (self.Y - _nmp.mean(self.Y, 0)) / _nmp.std(self.Y, 0) if args['scale'] \
-            else (self.Y - _nmp.mean(self.Y, 0))
+        self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
