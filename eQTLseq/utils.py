@@ -216,7 +216,9 @@ def simulate_eQTLs(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affecte
 
     # compute phenotype
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+    Y = _rnd.normal(G.dot(beta.T), 1)
     Z = sample_nbinom(mu * _nmp.exp(G.dot(beta.T)), phi)
+    # Z = sample_nbinom(mu * _nmp.exp(Y), phi)
 
     # remove genes with zero variance
     idxs = _nmp.std(Z, 0) > 0
@@ -226,7 +228,7 @@ def simulate_eQTLs(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affecte
     beta = beta[idxs, :]
 
     #
-    return {'Z': Z.T, 'mu': mu, 'phi': phi, 'beta': beta}
+    return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta}
 
 
 def calculate_metrics(beta, beta_true, beta_thr=1e-6):
@@ -236,11 +238,6 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
 
     beta = beta / _nmp.abs(beta).sum()
     beta_true = beta_true / _nmp.abs(beta_true).sum()
-
-    # sum of squared residuals and R2
-    RSS = ((beta - beta_true)**2).sum()
-    TSS = ((_nmp.mean(beta_true) - beta_true)**2).sum()
-    R2 = 1 - RSS / TSS
 
     # matrix of hits
     hits = _nmp.abs(_nmp.sign(beta))
@@ -268,10 +265,13 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     F1 = 2 * TPR * PPV / (TPR + PPV)  # F1 score
     G = _nmp.sqrt(TPR * PPV)  # G score
 
+    # sum of squared residuals
+    idxs = (hits == 1) & (hits_true == 1)
+    RSS = ((beta[idxs] - beta_true[idxs])**2).sum() / TP
+
     #
     return {
         'RSS': RSS,
-        'R2': R2,
         'MCC': MCC,
         'ACC': ACC,
         'F1': F1,

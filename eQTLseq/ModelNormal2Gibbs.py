@@ -6,7 +6,7 @@ import numpy.random as _rnd
 import eQTLseq.utils as _utils
 
 
-class ModelNormalGibbs(object):
+class ModelNormal2Gibbs(object):
     """A normal model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -26,8 +26,8 @@ class ModelNormalGibbs(object):
 
     def update(self, itr, **args):
         """TODO."""
-        YTY, GTG, GTY = args['YTY'], args['GTG'], args['GTY']
-        beta_thr, s2_lims, n_samples = args['beta_thr'], args['s2_lims'], args['n_samples']
+        GTG, GTY = args['GTG'], args['GTY']
+        beta_thr, s2_lims = args['beta_thr'], args['s2_lims']
         parallel = args['parallel']
 
         # identify irrelevant genes and markers and exclude them
@@ -36,19 +36,21 @@ class ModelNormalGibbs(object):
         idxs_markers = _nmp.any(idxs, 0)
         idxs_genes = _nmp.any(idxs, 1)
 
-        YTY = YTY[idxs_genes]
-        GTG = GTG[:, idxs_markers][idxs_markers, :]
+        GTG = GTG[idxs_genes, ...][..., idxs_markers, :][..., :, idxs_markers]
         GTY = GTY[idxs_markers, :][:, idxs_genes]
 
+        tau = self.tau[idxs_genes]
         zeta = self.zeta[idxs_genes, :][:, idxs_markers]
         eta = self.eta[idxs_markers]
 
         # sample beta and tau
-        beta, tau = _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims, parallel)
+        beta = _sample_beta(GTG, GTY, tau, zeta, eta, parallel)
         self.beta[_nmp.ix_(idxs_genes, idxs_markers)] = beta
-        self.tau[idxs_genes] = tau
 
-        # sample eta and zeta
+        # sample tau, eta and zeta
+        self.tau = _sample_tau(self.beta, self.zeta, self.eta)
+        self.tau = _nmp.clip(self.tau, 1 / s2_lims[1], 1 / s2_lims[0])
+
         self.zeta = _sample_zeta(self.beta, self.tau, self.eta)
         self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
@@ -86,23 +88,27 @@ class ModelNormalGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
 
-def _sample_beta_tau(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims, parallel):
+def _sample_beta(GTG, GTY, tau, zeta, eta, parallel):
     """TODO."""
-    _, n_markers = zeta.shape
-
-    # sample tau
-    shape = 0.5 * (n_samples + n_markers)
-    rate = 0.5 * YTY
-    tau = _rnd.gamma(shape, 1 / rate)
-    tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
-
     # sample beta
-    A = tau[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
-    b = tau * GTY
-    beta = _utils.sample_multivariate_normal_many(b.T, A, parallel)
+    A = GTG + tau[:, None, None] * zeta[:, :, None] * _nmp.diag(eta)
+    beta = _utils.sample_multivariate_normal_many(GTY.T, A, parallel)
 
     ##
-    return beta, tau
+    return beta
+
+
+def _sample_tau(beta, zeta, eta):
+    """TODO."""
+    _, n_markers = beta.shape
+
+    # sample tau
+    shape = 0.5 * n_markers
+    rate = 0.5 * (eta * beta**2 * zeta).sum(1)
+    tau = _rnd.gamma(shape, 1 / rate)
+
+    ##
+    return tau
 
 
 def _sample_zeta(beta, tau, eta):
@@ -118,7 +124,7 @@ def _sample_zeta(beta, tau, eta):
 
 def _sample_eta(beta, tau, zeta):
     """TODO."""
-    n_genes, _ = zeta.shape
+    n_genes, _ = beta.shape
 
     # sample zeta
     shape = 0.5 * n_genes

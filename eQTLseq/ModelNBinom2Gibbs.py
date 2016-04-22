@@ -4,10 +4,10 @@ import numpy as _nmp
 import numpy.random as _rnd
 import scipy.special as _spc
 
-from eQTLseq.ModelNormalStdGibbs import ModelNormalStdGibbs as _ModelNormalStdGibbs
+from eQTLseq.ModelNormal2Gibbs import ModelNormal2Gibbs as _ModelNormal2Gibbs
 
 
-class ModelNBinom2Gibbs(_ModelNormalStdGibbs):
+class ModelNBinom2Gibbs(_ModelNormal2Gibbs):
     """A negative binomial model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -19,10 +19,13 @@ class ModelNBinom2Gibbs(_ModelNormalStdGibbs):
 
         # initial conditions
         self.Y = _rnd.randn(n_samples, n_genes)
+        self.rho = _nmp.ones(n_genes)
 
         self.mu_phi, self.tau_phi, self.phi = 0, 1, _nmp.exp(_rnd.randn(n_genes))
         self.mu = _nmp.mean(Z * _nmp.exp(-self.Y), 0)
 
+        self.Y_sum, self.Y2_sum = _nmp.zeros((n_samples, n_genes)), _nmp.zeros((n_samples, n_genes))
+        self.rho_sum, self.rho2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.phi_sum, self.phi2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
 
@@ -32,21 +35,24 @@ class ModelNBinom2Gibbs(_ModelNormalStdGibbs):
 
         # sample mu and phi
         self.mu = _sample_mu(Z, self.phi, self.Y)
-        self.phi = _sample_phi(Z, G, self.mu, self.phi, self.Y, self.beta, self.zeta, self.eta,
-                               self.mu_phi, self.tau_phi)
+        self.phi = _sample_phi(Z, G, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
 
         # sample mu_phi and tau_phi
         self.mu_phi, self.tau_phi = _sample_mu_tau_phi(self.phi)
 
         # sample Y
-        self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
+        self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta, self.rho)
+        self.rho = _sample_rho(self.Y, G, self.beta)
+        self.rho = _nmp.clip(self.rho, 1 / args['s2_lims'][1], 1 / args['s2_lims'][0])
 
-        # update beta, tau, zeta and eta
-        GTY = G.T.dot(self.Y)
-        super().update(itr, GTY=GTY, phi=self.phi, **args)
+        # update beta, zeta and eta
+        GTY = G.T.dot(self.Y * self.rho)
+        args['GTG'] = self.rho[:, None, None] * G.T.dot(G)
+        super().update(itr, GTY=GTY, **args)
 
         if(itr > args['n_burnin']):
+            self.Y_sum += self.Y
+            self.Y2_sum += self.Y**2
             self.phi_sum += self.phi
             self.phi2_sum += self.phi**2
             self.mu_sum += self.mu
@@ -58,41 +64,35 @@ class ModelNBinom2Gibbs(_ModelNormalStdGibbs):
 
         #
         N = n_iters - n_burnin
-        phi_mean, mu_mean = self.phi_sum / N, self.mu_sum / N
-        phi_var, mu_var = self.phi2_sum / N - phi_mean**2, self.mu2_sum / N - mu_mean**2
+        phi_mean, mu_mean, Y_mean = self.phi_sum / N, self.mu_sum / N, self.Y_sum / N
+        phi_var, mu_var, Y_var = self.phi2_sum / N - phi_mean**2, self.mu2_sum / N - mu_mean**2, \
+            self.Y2_sum / N - Y_mean**2
 
         extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
 
-        return {'phi': phi_mean, 'phi_var': phi_var, 'mu': mu_mean, 'mu_var': mu_var, **extra}
+        return {'phi': phi_mean, 'phi_var': phi_var, 'mu': mu_mean, 'mu_var': mu_var, 'Y': Y_mean.T, 'Y_var': Y_var.T,
+                **extra}
 
     def get_state(self, **args):
         """TODO."""
         return super().get_state()
 
 
-def _sample_phi_global(Z, G, mu, phi, Y, beta, zeta, eta, mu_phi, tau_phi):
+def _sample_phi_global(Z, G, mu, phi, Y, mu_phi, tau_phi):
     n_samples, n_genes = Z.shape
     means = mu * _nmp.exp(Y)
-    GBT = G.dot(beta.T)
-    resid2 = (Y - GBT)**2
 
     # sample proposals from the prior
     alpha = 1 / phi
-    log_phi = _nmp.log(phi)
-    pi = alpha / (alpha + means)
+    pi = means / (alpha + means)
 
     phi_ = _nmp.exp(mu_phi + _rnd.randn(n_genes) / _nmp.sqrt(tau_phi))
     alpha_ = 1 / phi_
-    log_phi_ = _nmp.log(phi_)
-    pi_ = alpha_ / (alpha_ + means)
+    pi_ = means / (alpha_ + means)
 
     # compute loglik
-    loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum(0) \
-        - 0.5 * (log_phi + alpha * resid2).sum(0) \
-        - 0.5 * (log_phi[:, None] + zeta * eta * alpha[:, None] * beta**2).sum(1)
-    loglik_ = (_spc.gammaln(Z + alpha_) - _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)).sum(0) \
-        - 0.5 * (log_phi_ + alpha_ * resid2).sum(0) \
-        - 0.5 * (log_phi_[:, None] + zeta * eta * alpha_[:, None] * beta**2).sum(1)
+    loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)).sum(0)
+    loglik_ = (_spc.gammaln(Z + alpha_) - _spc.gammaln(alpha_) + alpha_ * _nmp.log1p(-pi_) + Z * _nmp.log(pi_)).sum(0)
 
     # Metropolis step
     diff = loglik_ - loglik
@@ -104,29 +104,23 @@ def _sample_phi_global(Z, G, mu, phi, Y, beta, zeta, eta, mu_phi, tau_phi):
     return phi
 
 
-def _sample_phi_local(Z, G, mu, phi, Y, beta, zeta, eta, mu_phi, tau_phi, scale=0.01):
+def _sample_phi_local(Z, G, mu, phi, Y, mu_phi, tau_phi, scale=0.01):
     n_samples, n_genes = Z.shape
     means = mu * _nmp.exp(Y)
-    GBT = G.dot(beta.T)
-    resid2 = (Y - GBT)**2
 
     # sample proposals from the prior
     alpha = 1 / phi
     log_phi = _nmp.log(phi)
-    pi = alpha / (alpha + means)
+    pi = means / (alpha + means)
 
     phi_ = phi * _nmp.exp(scale * _rnd.randn(n_genes))
     alpha_ = 1 / phi_
     log_phi_ = _nmp.log(phi_)
-    pi_ = alpha_ / (alpha_ + means)
+    pi_ = means / (alpha_ + means)
 
     # compute logpost
-    loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)).sum(0) \
-        - 0.5 * (log_phi + alpha * resid2).sum(0) \
-        - 0.5 * (log_phi[:, None] + zeta * eta * alpha[:, None] * beta**2).sum(1)
-    loglik_ = (_spc.gammaln(Z + alpha_) - _spc.gammaln(alpha_) + alpha_ * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)).sum(0) \
-        - 0.5 * (log_phi_ + alpha_ * resid2).sum(0) \
-        - 0.5 * (log_phi_[:, None] + zeta * eta * alpha_[:, None] * beta**2).sum(1)
+    loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)).sum(0)
+    loglik_ = (_spc.gammaln(Z + alpha_) - _spc.gammaln(alpha_) + alpha_ * _nmp.log1p(-pi_) + Z * _nmp.log(pi_)).sum(0)
 
     logprior = -log_phi - 0.5 * (log_phi - mu_phi)**2 * tau_phi
     logprior_ = -log_phi_ - 0.5 * (log_phi_ - mu_phi)**2 * tau_phi
@@ -144,11 +138,11 @@ def _sample_phi_local(Z, G, mu, phi, Y, beta, zeta, eta, mu_phi, tau_phi, scale=
     return phi
 
 
-def _sample_phi(Z, G, mu, phi, Y, beta, zeta, eta, mu_phi, tau_phi):
+def _sample_phi(Z, G, mu, phi, Y, mu_phi, tau_phi):
     if _rnd.rand() < 0.5:
-        phi = _sample_phi_local(Z, G, mu, phi, Y, beta, zeta, eta, mu_phi, tau_phi)
+        phi = _sample_phi_local(Z, G, mu, phi, Y, mu_phi, tau_phi)
     else:
-        phi = _sample_phi_global(Z, G, mu, phi, Y, beta, zeta, eta, mu_phi, tau_phi)
+        phi = _sample_phi_global(Z, G, mu, phi, Y, mu_phi, tau_phi)
 
     return phi
 
@@ -159,11 +153,11 @@ def _sample_mu(Z, phi, Y, a=0.5, b=0.5):
     Z = Z * _nmp.exp(-Y)
     alpha = 1 / phi
 
-    c1 = a + n_samples * alpha
-    c2 = b + Z.sum(0)
+    c1 = a + Z.sum(0)
+    c2 = b + n_samples * alpha
 
     pi = _rnd.beta(c1, c2)
-    mu = alpha * (1 - pi) / pi
+    mu = alpha * pi / (1 - pi)
 
     #
     return mu
@@ -188,19 +182,21 @@ def _sample_mu_tau_phi(phi):
     return mu_phi, tau_phi
 
 
-def _sample_Y(Z, G, mu, phi, Y, beta):
+def _sample_Y(Z, G, mu, phi, Y, beta, rho):
     n_samples, n_genes = Z.shape
     alpha = 1 / phi
 
     # sample proposals from a normal prior
-    pi = alpha / (alpha + mu * _nmp.exp(Y))
+    means = mu * _nmp.exp(Y)
+    pi = means / (alpha + means)
 
-    Y_ = _rnd.normal(G.dot(beta.T), _nmp.sqrt(phi))
-    pi_ = alpha / (alpha + mu * _nmp.exp(Y_))
+    Y_ = _rnd.normal(G.dot(beta.T), 1 / _nmp.sqrt(rho))
+    means_ = mu * _nmp.exp(Y_)
+    pi_ = means_ / (alpha + means_)
 
     # compute loglik
-    loglik = alpha * _nmp.log(pi) + Z * _nmp.log1p(-pi)
-    loglik_ = alpha * _nmp.log(pi_) + Z * _nmp.log1p(-pi_)
+    loglik = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)
+    loglik_ = alpha * _nmp.log1p(-pi_) + Z * _nmp.log(pi_)
 
     # do Metropolis step
     diff = loglik_ - loglik
@@ -210,3 +206,14 @@ def _sample_Y(Z, G, mu, phi, Y, beta):
 
     #
     return Y
+
+
+def _sample_rho(Y, G, beta):
+    n_samples, _ = Y.shape
+    resid2 = (Y - G.dot(beta.T))**2
+    shape = 0.5 * n_samples
+    rate = 0.5 * resid2.sum(0)
+    rho = _rnd.gamma(shape, 1 / rate)
+
+    #
+    return rho

@@ -1,4 +1,4 @@
-"""Implements ModelNormalStdGibbs."""
+"""Implements ModelNormalGibbs."""
 
 import numpy as _nmp
 import numpy.random as _rnd
@@ -6,7 +6,7 @@ import numpy.random as _rnd
 import eQTLseq.utils as _utils
 
 
-class ModelNormalStdGibbs(object):
+class ModelNormal3Gibbs(object):
     """A normal model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -14,10 +14,12 @@ class ModelNormalStdGibbs(object):
         n_genes, n_markers = args['n_genes'], args['n_markers']
 
         # initial conditions
+        self.tau = 1
         self.eta = _nmp.ones(n_markers)
         self.zeta = _nmp.ones((n_genes, n_markers))
         self.beta = _rnd.randn(n_genes, n_markers)
 
+        self.tau_sum, self.tau2_sum = 0, 0
         self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
         self.eta_sum, self.eta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
         self.beta_sum, self.beta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
@@ -25,12 +27,11 @@ class ModelNormalStdGibbs(object):
     def update(self, itr, **args):
         """TODO."""
         GTG, GTY = args['GTG'], args['GTY']
-        beta_thr, s2_lims, n_samples, n_genes = args['beta_thr'], args['s2_lims'], args['n_samples'], args['n_genes']
+        beta_thr, s2_lims = args['beta_thr'], args['s2_lims']
         parallel = args['parallel']
-        phi = args['phi'] if 'phi' in args else _nmp.ones(n_genes)
 
         # identify irrelevant genes and markers and exclude them
-        idxs = (_nmp.abs(self.beta) > beta_thr) & (self.zeta * self.eta / phi[:, None] < 1 / s2_lims[0])
+        idxs = _nmp.abs(self.beta) > beta_thr
         idxs[[0, 1], [0, 1]] = True  # just a precaution
         idxs_markers = _nmp.any(idxs, 0)
         idxs_genes = _nmp.any(idxs, 1)
@@ -40,28 +41,28 @@ class ModelNormalStdGibbs(object):
 
         zeta = self.zeta[idxs_genes, :][:, idxs_markers]
         eta = self.eta[idxs_markers]
-        phi = phi[idxs_genes]
 
         # sample beta and tau
-        beta = _sample_beta(GTG, GTY, zeta, eta, phi, n_samples, s2_lims, parallel)
+        beta = _sample_beta(GTG, GTY, self.tau, zeta, eta, parallel)
+        self.beta[_nmp.ix_(idxs_genes, idxs_markers)] = beta
 
         # sample eta and zeta
-        zeta = _sample_zeta(beta, eta, phi)
-        zeta = _nmp.clip(zeta, 1 / s2_lims[1], 1 / s2_lims[0])
+        self.tau = _sample_tau(args['Y'], args['G'], self.beta, self.zeta, self.eta)
+        self.tau = _nmp.clip(self.tau, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        eta = _sample_eta(beta, zeta, phi)
-        eta = _nmp.clip(eta, 1 / s2_lims[1], 1 / s2_lims[0])
+        self.zeta = _sample_zeta(self.beta, self.tau, self.eta)
+        self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
 
-        self.beta[_nmp.ix_(idxs_genes, idxs_markers)] = beta
-        self.beta[~idxs] = 0
-        self.zeta[_nmp.ix_(idxs_genes, idxs_markers)] = zeta
-        self.eta[idxs_markers] = eta
+        self.eta = _sample_eta(self.beta, self.tau, self.zeta)
+        self.eta = _nmp.clip(self.eta, 1 / s2_lims[1], 1 / s2_lims[0])
 
         if(itr > args['n_burnin']):
+            self.tau_sum += self.tau
             self.zeta_sum += self.zeta
             self.eta_sum += self.eta
             self.beta_sum += self.beta
 
+            self.tau2_sum += self.tau**2
             self.zeta2_sum += self.zeta**2
             self.eta2_sum += self.eta**2
             self.beta2_sum += self.beta**2
@@ -69,11 +70,13 @@ class ModelNormalStdGibbs(object):
     def get_estimates(self, **args):
         """TODO."""
         N = args['n_iters'] - args['n_burnin']
-        zeta_mean, eta_mean, beta_mean = self.zeta_sum / N, self.eta_sum / N, self.beta_sum / N
-        zeta_var, eta_var, beta_var = self.zeta2_sum / N - zeta_mean**2, self.eta2_sum / N - eta_mean**2, \
-            self.beta2_sum / N - beta_mean**2
+        tau_mean, zeta_mean, eta_mean, beta_mean = self.tau_sum / N, self.zeta_sum / N, self.eta_sum / N, \
+            self.beta_sum / N
+        tau_var, zeta_var, eta_var, beta_var = self.tau2_sum / N - tau_mean**2, self.zeta2_sum / N - zeta_mean**2, \
+            self.eta2_sum / N - eta_mean**2, self.beta2_sum / N - beta_mean**2
 
         return {
+            'tau': tau_mean, 'tau_var': tau_var,
             'zeta': zeta_mean, 'zeta_var': zeta_var,
             'eta': eta_mean, 'eta_var': eta_var,
             'beta': beta_mean, 'beta_var': beta_var
@@ -84,40 +87,48 @@ class ModelNormalStdGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
 
-def _sample_beta(GTG, GTY, zeta, eta, phi, n_samples, s2_lims, parallel):
+def _sample_beta(GTG, GTY, tau, zeta, eta, parallel):
     """TODO."""
-    _, n_markers = zeta.shape
-
-    # sample beta
-    theta = 1 / phi
-    A = theta[:, None, None] * (GTG + zeta[:, :, None] * _nmp.diag(eta))
-    b = theta * GTY
+    A = tau * (GTG + zeta[:, :, None] * _nmp.diag(eta))
+    b = tau * GTY
     beta = _utils.sample_multivariate_normal_many(b.T, A, parallel)
 
     ##
     return beta
 
 
-def _sample_zeta(beta, eta, phi):
+def _sample_tau(Y, G, beta, zeta, eta):
+    """TODO."""
+    n_samples, n_genes = Y.shape
+    _, n_markers = G.shape
+
+    # sample zeta
+    shape = 0.5 * (n_samples * n_genes + n_markers)
+    rate = 0.5 * (eta * beta**2 * zeta).sum()
+    tau = _rnd.gamma(shape, 1 / rate)
+
+    ##
+    return tau
+
+
+def _sample_zeta(beta, tau, eta):
     """TODO."""
     # sample zeta
-    theta = 1 / phi
     shape = 0.5
-    rate = 0.5 * eta * beta**2 * theta[:, None]
+    rate = 0.5 * eta * beta**2 * tau
     zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
 
     ##
     return zeta
 
 
-def _sample_eta(beta, zeta, phi):
+def _sample_eta(beta, tau, zeta):
     """TODO."""
     n_genes, _ = zeta.shape
 
     # sample zeta
-    theta = 1 / phi
     shape = 0.5 * n_genes
-    rate = 0.5 * (zeta * beta**2 * theta[:, None]).sum(0)
+    rate = 0.5 * (zeta * beta**2 * tau).sum(0)
     eta = _rnd.gamma(shape, 1 / rate)
 
     ##

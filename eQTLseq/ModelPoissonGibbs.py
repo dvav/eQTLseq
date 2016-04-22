@@ -21,6 +21,7 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
         self.mu = _nmp.mean(Z * _nmp.exp(-self.Y), 0)
         self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
+        self.Y_sum, self.Y2_sum = _nmp.zeros((n_samples, n_genes)), _nmp.zeros((n_samples, n_genes))
 
     def update(self, itr, **args):
         """TODO."""
@@ -39,6 +40,8 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         super().update(itr, YTY=YTY, GTY=GTY, **args)
 
         if(itr > args['n_burnin']):
+            self.Y_sum += self.Y
+            self.Y2_sum += self.Y**2
             self.mu_sum += self.mu
             self.mu2_sum += self.mu**2
 
@@ -48,12 +51,12 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
         #
         N = n_iters - n_burnin
-        mu_mean = self.mu_sum / N
-        mu_var = self.mu2_sum / N - mu_mean**2
+        mu_mean, Y_mean = self.mu_sum / N, self.Y_sum / N
+        mu_var, Y_var = self.mu2_sum / N - mu_mean**2, self.Y2_sum / N - Y_mean**2
 
         extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
 
-        return {'mu': mu_mean, 'mu_var': mu_var, **extra}
+        return {'mu': mu_mean, 'mu_var': mu_var, 'Y': Y_mean.T, 'Y_var': Y_var.T, **extra}
 
     def get_state(self, **args):
         """TODO."""
