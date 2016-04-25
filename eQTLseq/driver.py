@@ -1,13 +1,12 @@
 """Implements run()."""
 
+import multiprocessing as _mlp
 import sys as _sys
 
 import numpy as _nmp
-import multiprocessing as _mlp
 
 from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
-from eQTLseq.ModelNBinom2Gibbs import ModelNBinom2Gibbs as _ModelNBinom2Gibbs
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
@@ -18,7 +17,7 @@ def run(Z, G, mdl='Normal', scale=True, n_iters=1000, n_burnin=None, beta_thr=1e
     Z = Z.T
     n_threads = _mlp.cpu_count() if n_threads is None else n_threads
     n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
-    assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial', 'NBinomial2')
+    assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial')
 
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -54,7 +53,6 @@ def run(Z, G, mdl='Normal', scale=True, n_iters=1000, n_burnin=None, beta_thr=1e
         'Poisson': _ModelPoissonGibbs,
         'Binomial': _ModelBinomGibbs,
         'NBinomial': _ModelNBinomGibbs,
-        'NBinomial2': _ModelNBinom2Gibbs,
         'Normal': _ModelNormalGibbs,
     }[mdl]
     mdl = Model(**args)

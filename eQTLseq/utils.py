@@ -131,6 +131,19 @@ def fit_nbinom_model(read_counts, normalised=False):
     }
 
 
+def sample_PG(a, b):
+    """TODO."""
+    n_samples, n_genes = a.shape
+    assert a.size == b.size
+
+    PG = _R.r('BayesLogit::rpg')
+    rnds = [PG(num=n_genes, h=a_, z=b_) for a_, b_ in zip(a, b)]
+    rnds = _nmp.asarray(rnds)
+
+    #
+    return rnds
+
+
 def blom(Z, c=3/8):
     """TODO."""
     N, _ = Z.shape
@@ -169,7 +182,7 @@ def transform_data(Z, kind='log'):
     fcn = {
         'log': lambda x: _nmp.log(x + 1),
         'boxcox': lambda x: _nmp.asarray([_stats.boxcox(_ + 1)[0] for _ in x.T]).T,
-        'blom': lambda x: blom(x + _rnd.rand(*x.shape)*1e-6),  # add small random numbers to avoid spurious ties
+        'blom': lambda x: blom(x),  # add small random numbers to avoid spurious ties  + _rnd.rand(*x.shape)*1e-6
         'vst': lambda x: vst(x),
         'voom': lambda x: voom(x)
     }[kind]
@@ -236,6 +249,7 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     beta[_nmp.abs(beta) < beta_thr] = 0
     beta_true[_nmp.abs(beta_true) < beta_thr] = 0
 
+    # standardize
     beta = beta / _nmp.abs(beta).sum()
     beta_true = beta_true / _nmp.abs(beta_true).sum()
 
@@ -265,13 +279,17 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     F1 = 2 * TPR * PPV / (TPR + PPV)  # F1 score
     G = _nmp.sqrt(TPR * PPV)  # G score
 
-    # sum of squared residuals
+    # goodness of fit
     idxs = (hits == 1) & (hits_true == 1)
-    RSS = ((beta[idxs] - beta_true[idxs])**2).sum() / TP
+    GoF = _nmp.mean(((beta[idxs] - beta_true[idxs]) / beta_true[idxs])**2)
+    RSS = _nmp.sum((beta[idxs] - beta_true[idxs])**2)
+    TSS = _nmp.sum((beta_true[idxs] - _nmp.mean(beta_true[idxs]))**2)
+    R2 = 1 - RSS / TSS
 
     #
     return {
-        'RSS': RSS,
+        'GoF': GoF,
+        'R2': R2,
         'MCC': MCC,
         'ACC': ACC,
         'F1': F1,

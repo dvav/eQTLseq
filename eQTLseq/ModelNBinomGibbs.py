@@ -4,6 +4,8 @@ import numpy as _nmp
 import numpy.random as _rnd
 import scipy.special as _spc
 
+import eQTLseq.utils as _utils
+
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
 
@@ -40,12 +42,11 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
 
         # sample Y
         self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta, self.tau)
-        # self.Y = self.Y - _nmp.mean(self.Y, 0)
 
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
-        super().update(itr, Y=self.Y, YTY=YTY, GTY=GTY, **args)
+        super().update(itr, YTY=YTY, GTY=GTY, **args)
 
         if(itr > args['n_burnin']):
             self.Y_sum += self.Y
@@ -136,10 +137,10 @@ def _sample_phi_local(Z, G, mu, phi, Y, mu_phi, tau_phi, scale=0.01):
 
 
 def _sample_phi(Z, G, mu, phi, Y, mu_phi, tau_phi):
-    # if _rnd.rand() < 0.5:
-    #     phi = _sample_phi_local(Z, G, mu, phi, Y, mu_phi, tau_phi)
-    # else:
-    phi = _sample_phi_global(Z, G, mu, phi, Y, mu_phi, tau_phi)
+    if _rnd.rand() < 0.5:
+        phi = _sample_phi_local(Z, G, mu, phi, Y, mu_phi, tau_phi)
+    else:
+        phi = _sample_phi_global(Z, G, mu, phi, Y, mu_phi, tau_phi)
 
     return phi
 
@@ -179,7 +180,23 @@ def _sample_mu_tau_phi(phi):
     return mu_phi, tau_phi
 
 
-def _sample_Y(Z, G, mu, phi, Y, beta, tau):
+# def _sample_Y(Z, G, mu, phi, Y, beta, tau):
+#     n_samples, n_genes = Z.shape
+#     alpha = 1 / phi
+#     Z = Z * alpha / mu
+#
+#     # omega and Y
+#     omega = _utils.sample_PG(Z + alpha, Y)
+#
+#     prec = omega + tau
+#     mu = 0.5 * (Z - alpha) / prec + tau * G.dot(beta.T) / prec
+#     Y = _rnd.normal(mu, 1 / _nmp.sqrt(prec))
+#
+#     #
+#     return Y
+#
+
+def _sample_Y_global(Z, G, mu, phi, Y, beta, tau):
     n_samples, n_genes = Z.shape
     alpha = 1 / phi
 
@@ -202,4 +219,39 @@ def _sample_Y(Z, G, mu, phi, Y, beta, tau):
     Y[idxs] = Y_[idxs]
 
     #
+    return Y
+
+
+def _sample_Y_local(Z, G, mu, phi, Y, beta, tau, scale=0.01):
+    n_samples, n_genes = Z.shape
+    alpha = 1 / phi
+
+    # sample proposals from a normal prior
+    means = mu * _nmp.exp(Y)
+    pi = means / (alpha + means)
+
+    Y_ = Y + scale * _rnd.randn(n_samples, n_genes)
+    means_ = mu * _nmp.exp(Y_)
+    pi_ = means_ / (alpha + means_)
+
+    # compute loglik
+    logpost = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi) - 0.5 * tau * (Y - G.dot(beta.T))**2
+    logpost_ = alpha * _nmp.log1p(-pi_) + Z * _nmp.log(pi_) - 0.5 * tau * (Y_ - G.dot(beta.T))**2
+
+    # do Metropolis step
+    diff = logpost_ - logpost
+    diff[diff > 100] = 100  # avoid overflows in exp below
+    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(diff)
+    Y[idxs] = Y_[idxs]
+
+    #
+    return Y
+
+
+def _sample_Y(Z, G, mu, phi, Y, beta, tau):
+    if _rnd.rand() < 0.5:
+        Y = _sample_Y_local(Z, G, mu, phi, Y, beta, tau)
+    else:
+        Y = _sample_Y_global(Z, G, mu, phi, Y, beta, tau)
+
     return Y
