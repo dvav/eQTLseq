@@ -110,7 +110,7 @@ def _sample_zeta(beta, tau, eta):
     # sample zeta
     shape = 0.5
     rate = 0.5 * eta * beta**2 * tau[:, None]
-    zeta = _rnd.gamma(shape, 1 / rate)
+    zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
 
     ##
     return zeta

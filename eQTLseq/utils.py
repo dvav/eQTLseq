@@ -279,17 +279,13 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     F1 = 2 * TPR * PPV / (TPR + PPV)  # F1 score
     G = _nmp.sqrt(TPR * PPV)  # G score
 
-    # goodness of fit
+    # average standardised residual among true positives
     idxs = (hits == 1) & (hits_true == 1)
-    GoF = _nmp.mean(((beta[idxs] - beta_true[idxs]) / beta_true[idxs])**2)
-    RSS = _nmp.sum((beta[idxs] - beta_true[idxs])**2)
-    TSS = _nmp.sum((beta_true[idxs] - _nmp.mean(beta_true[idxs]))**2)
-    R2 = 1 - RSS / TSS
+    RSS = _nmp.mean(((beta[idxs] - beta_true[idxs]) / beta_true[idxs])**2)
 
     #
     return {
-        'GoF': GoF,
-        'R2': R2,
+        'RSS': RSS,
         'MCC': MCC,
         'ACC': ACC,
         'F1': F1,
