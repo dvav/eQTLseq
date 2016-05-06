@@ -6,18 +6,21 @@ import sys as _sys
 import numpy as _nmp
 
 from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
+from eQTLseq.ModelNBinom2Gibbs import ModelNBinom2Gibbs as _ModelNBinom2Gibbs
+from eQTLseq.ModelNBinom3Gibbs import ModelNBinom3Gibbs as _ModelNBinom3Gibbs
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
+from eQTLseq.ModelPoisson2Gibbs import ModelPoisson2Gibbs as _ModelPoisson2Gibbs
 from eQTLseq.ModelPoissonGibbs import ModelPoissonGibbs as _ModelPoissonGibbs
 
 
-def run(Z, G, mdl='Normal', scale=True, n_iters=1000, n_burnin=None, beta_thr=1e-6, s2_lims=(1e-20, 1e3),
-        n_threads=1, progress=True, **extra):
+def run(Z, G, mdl='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-6, s2_lims=(1e-20, 1e3), n_threads=1,
+        progress=True, **extra):
     """Run an estimation algorithm for a specified number of iterations."""
     Z = Z.T
     n_threads = _mlp.cpu_count() if n_threads is None else n_threads
-    n_burnin = round(n_iters * 0.5) if n_burnin is None else n_burnin
-    assert mdl in ('Normal', 'Poisson', 'Binomial', 'NBinomial')
+    n_burnin = round(n_iters * burnin)
+    assert mdl in ('Normal', 'Poisson', 'Poisson2', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3')
 
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -51,8 +54,11 @@ def run(Z, G, mdl='Normal', scale=True, n_iters=1000, n_burnin=None, beta_thr=1e
     # prepare model
     Model = {
         'Poisson': _ModelPoissonGibbs,
+        'Poisson2': _ModelPoisson2Gibbs,
         'Binomial': _ModelBinomGibbs,
         'NBinomial': _ModelNBinomGibbs,
+        'NBinomial2': _ModelNBinom2Gibbs,
+        'NBinomial3': _ModelNBinom3Gibbs,
         'Normal': _ModelNormalGibbs,
     }[mdl]
     mdl = Model(**args)

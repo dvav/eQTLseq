@@ -9,9 +9,9 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 import scipy.stats as _stats
 
-import rpy2.robjects as _R
-import rpy2.robjects.numpy2ri
-rpy2.robjects.numpy2ri.activate()
+# import rpy2.robjects as _R
+# import rpy2.robjects.numpy2ri
+# rpy2.robjects.numpy2ri.activate()
 
 
 def solve_chol_one(L, b):
@@ -131,17 +131,22 @@ def fit_nbinom_model(read_counts, normalised=False):
     }
 
 
-def sample_PG(a, b):
+def sample_PG(a, b, K=20):
     """TODO."""
-    n_samples, n_genes = a.shape
-    assert a.size == b.size
+    assert a.shape == b.shape
+    pi = _nmp.pi
 
-    PG = _R.r('BayesLogit::rpg')
-    rnds = [PG(num=n_genes, h=a_, z=b_) for a_, b_ in zip(a, b)]
-    rnds = _nmp.asarray(rnds)
+    g = _rnd.gamma(a, 1, size=(K,) + a.shape)
+    k = _nmp.r_[1:K+1][:, None, None]
+    d = (k - 0.5)**2 + 0.25 * (b / pi)**2
+    x = 0.5 / pi**2 * (g / d).sum(0)
 
-    #
-    return rnds
+    c1 = 0.5 * a / b * _nmp.tanh(0.5 * b)
+    c2 = 0.5 / pi**2 * (a / d).sum(0)
+    x = c1 / c2 * x
+
+    # return
+    return x
 
 
 def blom(Z, c=3/8):
@@ -193,10 +198,12 @@ def transform_data(Z, kind='log'):
     return Y
 
 
-def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
+def simulate_genotypes(MAF, n_samples=1000, n_markers=100):
     """Generate a matrix of genotypes, using a binomial model."""
+    assert MAF.size >= n_markers
+
     # compute MAFs for each genetic marker and compute genotypes
-    MAF = _rnd.uniform(MAF_range[0], MAF_range[1], n_markers)
+    MAF = _rnd.choice(MAF, n_markers, replace=False)
     G = _rnd.binomial(2, MAF, (n_samples, n_markers))   # assume ploidy=2
 
     # drop mono-morphic markers
@@ -206,31 +213,63 @@ def simulate_genotypes(n_samples=1000, n_markers=100, MAF_range=(0.05, 0.5)):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_eQTLs(G, mu, phi, n_markers_causal=2, n_genes=None, n_genes_affected=10, s2=1):
+def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 10), size=2, pois=0.05, outliers=0.05):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size if n_genes is None else n_genes
+    n_markers_hot, n_genes_hot = hot
+    n_genes_poly, n_markers_poly = poly
 
-    assert n_markers > n_markers_causal
-    assert n_genes > n_genes_affected
+    assert n_markers > n_markers_hot
+    assert n_genes > n_genes_hot
+    assert n_genes > n_genes_poly
+    assert n_markers > n_markers_poly
+
     assert n_genes <= phi.size
+    assert size > 1
 
+    # mean and dispersion parameters
     idxs = _rnd.choice(phi.size, n_genes, replace=False)
     mu, phi = mu[idxs], phi[idxs]
 
-    # sample causal markers and affected genes
-    idxs_markers_causal = _rnd.choice(n_markers, n_markers_causal, replace=False)
-    idxs_genes_affected = _rnd.choice(n_genes, n_genes_affected, replace=False)
+    # poisson distributed genes
+    idxs = _rnd.choice(n_genes, int(n_genes * pois), replace=False)
+    phi[idxs] = 1e-20
 
-    # compute causal coefficients
+    # outliers
+    # TODO
+
+    # coefficients
     beta = _nmp.zeros((n_genes, n_markers))
-    beta[_nmp.ix_(idxs_genes_affected, idxs_markers_causal)] = \
-        _rnd.normal(0, _nmp.sqrt(s2 / n_markers_causal), (n_genes_affected, n_markers_causal))
+
+    # isolated eQTLs
+    eQTL_idxs_markers = _rnd.choice(n_markers, n_eQTLs, replace=False)
+    eQTL_idxs_genes = _rnd.choice(n_genes, n_eQTLs, replace=False)
+    beta[(eQTL_idxs_genes, eQTL_idxs_markers)] = _rnd.uniform(-1, 1, size=n_eQTLs)
+
+    # hotspots
+    if n_markers_hot > 0:
+        hot_idxs_markers = _rnd.choice(n_markers, n_markers_hot, replace=False)
+        hot_idxs_genes = _nmp.hstack([_rnd.choice(n_genes, (n_genes_hot, 1), replace=False) for _ in hot_idxs_markers])
+        beta[hot_idxs_genes, hot_idxs_markers] = _rnd.uniform(-1, 1, size=(n_genes_hot, n_markers_hot))
+
+    # polymarkers effects
+    if n_genes_poly > 0:
+        poly_idxs_genes = _rnd.choice(n_genes, (n_genes_poly, 1), replace=False)
+        poly_idxs_markers = _nmp.vstack([_rnd.choice(n_markers, n_markers_poly, replace=False) for _ in poly_idxs_genes])
+        beta[poly_idxs_genes, poly_idxs_markers] = _rnd.uniform(-1, 1, size=(n_genes_poly, n_markers_poly))
+
+    # scale coefficients
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+
+    GBT = G.dot(beta.T)
+    mx = _nmp.max(_nmp.abs(GBT))
+    beta = beta / mx * _nmp.log(size)
 
     # compute phenotype
-    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-    Y = _rnd.normal(G.dot(beta.T), 1)
-    Z = sample_nbinom(mu * _nmp.exp(G.dot(beta.T)), phi)
+    GBT = G.dot(beta.T)
+    Y = _rnd.normal(GBT, 1)
+    Z = sample_nbinom(mu * _nmp.exp(GBT), phi)
     # Z = sample_nbinom(mu * _nmp.exp(Y), phi)
 
     # remove genes with zero variance

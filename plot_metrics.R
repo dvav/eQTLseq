@@ -1,7 +1,7 @@
 require('ggplot2')
 require('dplyr')
 
-metrics = read.table('metrics4.txt', stringsAsFactors = F, sep = ',', header = T)
+metrics = read.table('metrics3.txt', stringsAsFactors = F, sep = ',', header = T)
 metrics_flat = metrics %>%
   mutate(MCC = ifelse(is.na(MCC), 0, MCC)) %>%
   mutate(RSS = ifelse(is.na(RSS), 0, RSS)) %>%
@@ -18,24 +18,28 @@ metrics_flat = metrics %>%
                 convert = T)
 
 mdls = c('nbin','pois', 'bin', 'log', 'bcox', 'blom')
+metric = 'PPV'
 metrics_filt = metrics_flat %>%
-  filter(METRIC %in% c('M'), S2 == 4) %>%
+  filter(METRIC %in% c(metric), S2==2) %>%
   select(-METRIC) %>%
-  group_by(NSAMPLES, NGENES, NGENES_AFFECTED, NMARKERS, NMARKERS_CAUSAL, MODEL2) %>%
+  group_by(NSAMPLES, NMARKERS, NMARKERS_CAUSAL, NGENES, NGENES_AFFECTED, MODEL2) %>%
   arrange(desc(VALUE)) %>%
-  slice(1) %>%
-  ungroup()
+  slice(1:3) %>%
+  ungroup() %>%
+  mutate(MODEL2=factor(MODEL2, levels = mdls, ordered = T))
 
 means = metrics_filt %>%
-  group_by(NSAMPLES, NGENES, NGENES_AFFECTED, NMARKERS, NMARKERS_CAUSAL) %>%
+  group_by(NSAMPLES, NMARKERS, NMARKERS_CAUSAL, NGENES, NGENES_AFFECTED) %>%
   summarise(MEAN = mean(VALUE)) %>%
   ungroup()
 
+
 print(
-  ggplot(data = metrics_filt, mapping = aes(x = factor(MODEL2, levels = mdls, ordered = T), y = VALUE, fill = MODEL2)) +
+  ggplot(data = metrics_filt, mapping = aes(x = MODEL2, y = VALUE, fill = MODEL2)) +
     geom_boxplot(alpha = 0.5, width = 0.5) +
     geom_hline(data = means, aes(yintercept = MEAN), linetype = 'dashed') +
     theme(legend.position = 'none') +
-    # scale_y_continuous(limits = c(0, 1)) +
-    facet_wrap(NSAMPLES ~ NMARKERS_CAUSAL + NGENES_AFFECTED, labeller = label_both, ncol = 4)
+    scale_x_discrete(name='') +
+    scale_y_continuous(name=metric) +
+    facet_wrap(NSAMPLES~NMARKERS_CAUSAL + NGENES_AFFECTED, labeller = label_both, ncol = 4)
 )

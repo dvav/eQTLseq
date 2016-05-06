@@ -86,9 +86,7 @@ def _sample_Y(Z, G, mu, Y, beta, tau):
     loglik_ = Z * _nmp.log(means_) - means_
 
     # do Metropolis step
-    diff = loglik_ - loglik
-    diff[diff > 100] = 100  # avoid overflows in exp below
-    idxs = _rnd.rand(n_samples, n_genes) < _nmp.exp(diff)
+    idxs = _nmp.log(_rnd.rand(n_samples, n_genes)) < loglik_ - loglik
     Y[idxs] = Y_[idxs]
 
     #

@@ -17,7 +17,7 @@ class ModelNormalGibbs(object):
         self.tau = _nmp.ones(n_genes)
         self.eta = _nmp.ones(n_markers)
         self.zeta = _nmp.ones((n_genes, n_markers))
-        self.beta = _rnd.randn(n_genes, n_markers)
+        self.beta = _rnd.randn(n_genes, n_markers) / n_markers
 
         self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
@@ -31,7 +31,7 @@ class ModelNormalGibbs(object):
         parallel = args['parallel']
 
         # identify irrelevant genes and markers and exclude them
-        idxs = _nmp.abs(self.beta) > beta_thr
+        idxs = (_nmp.abs(self.beta) > beta_thr) & (self.tau[:, None] * self.zeta * self.eta < 1 / args['s2_lims'][0])
         idxs[[0, 1], [0, 1]] = True  # just a precaution
         idxs_markers = _nmp.any(idxs, 0)
         idxs_genes = _nmp.any(idxs, 1)
