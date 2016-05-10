@@ -27,17 +27,17 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         """TODO."""
         Z, G = args['Z'], args['G']
 
-        # sample mu
-        self.mu = _sample_mu(Z, self.Y)
+        # update beta, tau, zeta and eta
+        YTY = _nmp.sum(self.Y**2, 0)
+        GTY = G.T.dot(self.Y)
+        super().update(itr, YTY=YTY, GTY=GTY, **args)
 
         # sample Y
         self.Y = _sample_Y(Z, G, self.mu, self.Y, self.beta, self.tau)
         self.Y = self.Y - _nmp.mean(self.Y, 0)
 
-        # update beta, tau, zeta and eta
-        YTY = _nmp.sum(self.Y**2, 0)
-        GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTY=GTY, **args)
+        # sample mu
+        self.mu = _sample_mu(Z, self.Y)
 
         if(itr > args['n_burnin']):
             self.Y_sum += self.Y

@@ -30,20 +30,20 @@ class ModelNBinom2Gibbs(_ModelNormalStdGibbs):
         """TODO."""
         Z, G = args['Z'], args['G']
 
+        # update beta, tau, zeta and eta
+        GTY = G.T.dot(self.Y)
+        super().update(itr, GTY=GTY, **args)
+
+        # sample Y
+        self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta)
+        # self.Y = self.Y - _nmp.mean(self.Y, 0)
+
         # sample mu and phi
         self.mu = _sample_mu(Z, self.phi, self.Y)
         self.phi = _sample_phi(Z, G, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
 
         # sample mu_phi and tau_phi
         self.mu_phi, self.tau_phi = _sample_mu_tau_phi(self.phi)
-
-        # sample Y
-        self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
-
-        # update beta, tau, zeta and eta
-        GTY = G.T.dot(self.Y)
-        super().update(itr, GTY=GTY, **args)
 
         if(itr > args['n_burnin']):
             self.Y_sum += self.Y
@@ -131,24 +131,6 @@ def _sample_mu_tau_phi(phi):
     #
     return mu_phi, tau_phi
 
-
-# def _sample_Y(Z, G, mu, phi, Y, beta, tau):
-#     n_samples, n_genes = Z.shape
-#     alpha = 1 / phi
-#     c = _nmp.log(mu) - _nmp.log(alpha)
-#
-#     # omega and Y
-#     omega = _utils.sample_PG(Z + alpha, c + Y)
-#
-#     k = 0.5 * (Z - alpha)
-#     GBT = G.dot(beta.T)
-#     prec = omega + tau
-#     mu = (k - c * omega + tau * GBT) / prec
-#     Y = _rnd.normal(mu, 1 / _nmp.sqrt(prec))
-#
-#     #
-#     return Y
-#
 
 def _sample_Y(Z, G, mu, phi, Y, beta):
     n_samples, n_genes = Z.shape

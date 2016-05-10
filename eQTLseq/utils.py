@@ -9,9 +9,9 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 import scipy.stats as _stats
 
-# import rpy2.robjects as _R
-# import rpy2.robjects.numpy2ri
-# rpy2.robjects.numpy2ri.activate()
+import rpy2.robjects as _R
+import rpy2.robjects.numpy2ri
+rpy2.robjects.numpy2ri.activate()
 
 
 def solve_chol_one(L, b):
@@ -131,18 +131,19 @@ def fit_nbinom_model(read_counts, normalised=False):
     }
 
 
-def sample_PG(a, b, K=20):
+def sample_PG(a, b, K=10):
     """TODO."""
     assert a.shape == b.shape
     pi = _nmp.pi
 
-    g = _rnd.gamma(a, 1, size=(K,) + a.shape)
     k = _nmp.r_[1:K+1][:, None, None]
-    d = (k - 0.5)**2 + 0.25 * (b / pi)**2
-    x = 0.5 / pi**2 * (g / d).sum(0)
+    denom = (k - 0.5)**2 + 0.25 * (b / pi)**2
+
+    g = _rnd.gamma(a, 1, size=(K,) + a.shape)
+    x = 0.5 / pi**2 * (g / denom).sum(0)
 
     c1 = 0.5 * a / b * _nmp.tanh(0.5 * b)
-    c2 = 0.5 / pi**2 * (a / d).sum(0)
+    c2 = 0.5 / pi**2 * (a / denom).sum(0)
     x = c1 / c2 * x
 
     # return

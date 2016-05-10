@@ -8,6 +8,7 @@ import numpy as _nmp
 from eQTLseq.ModelBinomGibbs import ModelBinomGibbs as _ModelBinomGibbs
 from eQTLseq.ModelNBinom2Gibbs import ModelNBinom2Gibbs as _ModelNBinom2Gibbs
 from eQTLseq.ModelNBinom3Gibbs import ModelNBinom3Gibbs as _ModelNBinom3Gibbs
+from eQTLseq.ModelNBinom4Gibbs import ModelNBinom4Gibbs as _ModelNBinom4Gibbs
 from eQTLseq.ModelNBinomGibbs import ModelNBinomGibbs as _ModelNBinomGibbs
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 from eQTLseq.ModelPoisson2Gibbs import ModelPoisson2Gibbs as _ModelPoisson2Gibbs
@@ -20,7 +21,7 @@ def run(Z, G, mdl='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-6,
     Z = Z.T
     n_threads = _mlp.cpu_count() if n_threads is None else n_threads
     n_burnin = round(n_iters * burnin)
-    assert mdl in ('Normal', 'Poisson', 'Poisson2', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3')
+    assert mdl in ('Normal', 'Poisson', 'Poisson2', 'Binomial', 'NBinomial', 'NBinomial2', 'NBinomial3', 'NBinomial4')
 
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -59,6 +60,7 @@ def run(Z, G, mdl='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-6,
         'NBinomial': _ModelNBinomGibbs,
         'NBinomial2': _ModelNBinom2Gibbs,
         'NBinomial3': _ModelNBinom3Gibbs,
+        'NBinomial4': _ModelNBinom4Gibbs,
         'Normal': _ModelNormalGibbs,
     }[mdl]
     mdl = Model(**args)

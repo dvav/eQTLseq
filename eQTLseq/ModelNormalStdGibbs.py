@@ -17,7 +17,7 @@ class ModelNormalStdGibbs(object):
         self.tau = _nmp.ones(n_genes)
         self.eta = _nmp.ones(n_markers)
         self.zeta = _nmp.ones((n_genes, n_markers))
-        self.beta = _rnd.randn(n_genes, n_markers) / n_markers
+        self.beta = _rnd.randn(n_genes, n_markers)
 
         self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
         self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
@@ -30,22 +30,8 @@ class ModelNormalStdGibbs(object):
         beta_thr, s2_lims = args['beta_thr'], args['s2_lims']
         parallel = args['parallel']
 
-        # identify irrelevant genes and markers and exclude them
-        idxs = (_nmp.abs(self.beta) > beta_thr) & (self.tau[:, None] * self.zeta * self.eta < 1 / args['s2_lims'][0])
-        idxs[[0, 1], [0, 1]] = True  # just a precaution
-        idxs_markers = _nmp.any(idxs, 0)
-        idxs_genes = _nmp.any(idxs, 1)
-
-        GTG = GTG[:, idxs_markers][idxs_markers, :]
-        GTY = GTY[idxs_markers, :][:, idxs_genes]
-
-        tau = self.tau[idxs_genes]
-        zeta = self.zeta[idxs_genes, :][:, idxs_markers]
-        eta = self.eta[idxs_markers]
-
         # sample beta and tau
-        beta = _sample_beta(GTG, GTY, tau, zeta, eta, parallel)
-        self.beta[_nmp.ix_(idxs_genes, idxs_markers)] = beta
+        self.beta = _sample_beta(GTG, GTY, self.beta, self.tau, self.zeta, self.eta, beta_thr, s2_lims, parallel)
 
         # sample eta and zeta
         self.tau = _sample_tau(self.beta, self.zeta, self.eta)
@@ -88,10 +74,33 @@ class ModelNormalStdGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
 
-def _sample_beta(GTG, GTY, tau, zeta, eta, parallel):
+def _sample_beta_(GTG, GTY, tau, zeta, eta, parallel):
     """TODO."""
-    A = GTG + tau[:, None, None] * zeta[:, :, None] * _nmp.diag(eta)
+    n_markers = eta.size
+    theta = tau[:, None] * zeta * eta
+    A = GTG + theta[:, :, None] * _nmp.identity(n_markers)
     beta = _utils.sample_multivariate_normal_many(GTY.T, A, parallel)
+
+    ##
+    return beta
+
+
+def _sample_beta(GTG, GTY, beta, tau, zeta, eta, beta_thr, s2_lims, parallel):
+    """TODO."""
+    # identify irrelevant genes and markers and exclude them
+    idxs = (_nmp.abs(beta) > beta_thr) & (tau[:, None] * zeta * eta < 1 / s2_lims[0])
+    idxs[[0, 1], [0, 1]] = True  # just a precaution
+    idxs_markers = _nmp.any(idxs, 0)
+    idxs_genes = _nmp.any(idxs, 1)
+
+    GTG = GTG[:, idxs_markers][idxs_markers, :]
+    GTY = GTY[idxs_markers, :][:, idxs_genes]
+
+    tau = tau[idxs_genes]
+    zeta = zeta[idxs_genes, :][:, idxs_markers]
+    eta = eta[idxs_markers]
+
+    beta[_nmp.ix_(idxs_genes, idxs_markers)] = _sample_beta_(GTG, GTY, tau, zeta, eta, parallel)
 
     ##
     return beta

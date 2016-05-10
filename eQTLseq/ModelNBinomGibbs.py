@@ -30,21 +30,20 @@ class ModelNBinomGibbs(_ModelNormalGibbs):
         """TODO."""
         Z, G = args['Z'], args['G']
 
+        # update beta, tau, zeta and eta
+        YTY = _nmp.sum(self.Y**2, 0)
+        GTY = G.T.dot(self.Y)
+        super().update(itr, YTY=YTY, GTY=GTY, **args)
+
+        # sample Y
+        self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta, self.tau)
+
         # sample mu and phi
         self.mu = _sample_mu(Z, self.phi, self.Y)
         self.phi = _sample_phi(Z, G, self.mu, self.phi, self.Y, self.mu_phi, self.tau_phi)
 
         # sample mu_phi and tau_phi
         self.mu_phi, self.tau_phi = _sample_mu_tau_phi(self.phi)
-
-        # sample Y
-        self.Y = _sample_Y(Z, G, self.mu, self.phi, self.Y, self.beta, self.tau)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
-
-        # update beta, tau, zeta and eta
-        YTY = _nmp.sum(self.Y**2, 0)
-        GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTY=GTY, **args)
 
         if(itr > args['n_burnin']):
             self.Y_sum += self.Y

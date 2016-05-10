@@ -4,8 +4,10 @@ import numpy as _nmp
 import numpy.random as _rnd
 import scipy.special as _spc
 
+import eQTLseq.utils as _utils
 
-class ModelNBinom3Gibbs(object):
+
+class ModelNBinom4Gibbs(object):
     """A negative binomial model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -29,11 +31,11 @@ class ModelNBinom3Gibbs(object):
     def update(self, itr, **args):
         """TODO."""
         Z, G = args['Z'], args['G']
-        beta_thr, s2_lims = args['beta_thr'], args['s2_lims']
+        s2_lims = args['s2_lims']
 
         # update beta
         self.beta = _sample_beta(Z, G, self.mu, self.phi, self.beta, self.tau, self.zeta, self.eta,
-                                 beta_thr, s2_lims)
+                                 args['beta_thr'], s2_lims, args['parallel'])
 
         # update tau, zeta and eta
         self.tau = _sample_tau(self.beta, self.zeta, self.eta)
@@ -139,84 +141,28 @@ def _sample_mu_tau_phi(phi):
     return mu_phi, tau_phi
 
 
-def _sample_beta_one_global(Z, G_j, G, mu, phi, beta_j, beta, tau, zeta_j, eta_j):
-    """TODO."""
-    _, n_genes = Z.shape
-
-    alpha = 1 / phi
-    m = mu * _nmp.exp(G.dot(beta.T))
-
-    # sample proposals from a normal prior
-    means = m * _nmp.exp(G_j[:, None] * beta_j)
-    pi = means / (alpha + means)
-
-    beta_j_ = _rnd.normal(0, 1 / _nmp.sqrt(tau * eta_j * zeta_j))
-    means_ = m * _nmp.exp(G_j[:, None] * beta_j_)
-    pi_ = means_ / (alpha + means_)
-
-    # compute loglik
-    loglik = (alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)).sum(0)
-    loglik_ = (alpha * _nmp.log1p(-pi_) + Z * _nmp.log(pi_)).sum(0)
-
-    # do Metropolis step
-    idxs = _nmp.log(_rnd.rand(n_genes)) < loglik_ - loglik
-    beta_j[idxs] = beta_j_[idxs]
-
-    #
-    return beta_j
-
-
-def _sample_beta_one_local(Z, G_j, G, mu, phi, beta_j, beta, tau, zeta_j, eta_j, scale=0.01):
-    """TODO."""
-    _, n_genes = Z.shape
-
-    alpha = 1 / phi
-    m = mu * _nmp.exp(G.dot(beta.T))
-
-    # sample proposals from a normal prior
-    means = m * _nmp.exp(G_j[:, None] * beta_j)
-    pi = means / (alpha + means)
-
-    beta_j_ = beta_j + scale * _rnd.randn(n_genes)
-    means_ = m * _nmp.exp(G_j[:, None] * beta_j_)
-    pi_ = means_ / (alpha + means_)
-
-    # compute loglik
-    loglik = (alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)).sum(0) - 0.5 * tau * eta_j * zeta_j * beta_j**2
-    loglik_ = (alpha * _nmp.log1p(-pi_) + Z * _nmp.log(pi_)).sum(0) - 0.5 * tau * eta_j * zeta_j * beta_j_**2
-
-    # do Metropolis step
-    idxs = _nmp.log(_rnd.rand(n_genes)) < loglik_ - loglik
-    beta_j[idxs] = beta_j_[idxs]
-
-    #
-    return beta_j
-
-
-def _sample_beta_one(Z, G_j, G, mu, phi, beta_j, beta, tau, zeta_j, eta_j):
-    if _rnd.rand() < 0.5:
-        beta_j = _sample_beta_one_local(Z, G_j, G, mu, phi, beta_j, beta, tau, zeta_j, eta_j)
-    else:
-        beta_j = _sample_beta_one_global(Z, G_j, G, mu, phi, beta_j, beta, tau, zeta_j, eta_j)
-
-    return beta_j
-
-
-def _sample_beta_(Z, G, mu, phi, beta, tau, zeta, eta):
+def _sample_beta_(Z, G, mu, phi, beta, tau, zeta, eta, parallel):
     """TODO."""
     _, n_markers = G.shape
+    alpha = 1 / phi
+    x0 = _nmp.log(mu) - _nmp.log(alpha)
 
-    idxs = _nmp.arange(n_markers)
-    for j in _rnd.permutation(n_markers):
-        not_j = j != idxs
-        beta[:, j] = _sample_beta_one(Z, G[:, j], G[:, not_j], mu, phi, beta[:, j], beta[:, not_j], tau, zeta[:, j],
-                                      eta[j])
+    # first sample omega
+    omega = _utils.sample_PG(Z + alpha, x0 + G.dot(beta.T))
+
+    # then, sample beta
+    theta = tau[:, None] * zeta * eta
+    A1 = _nmp.dot(omega.T[:, None, :] * G.T, G)
+    A2 = theta[:, :, None] * _nmp.identity(n_markers)
+    A = A1 + A2
+    b = 0.5 * G.T.dot(Z - alpha - 2 * omega * x0)
+    beta = _utils.sample_multivariate_normal_many(b.T, A, parallel)
 
     #
     return beta
 
 
-def _sample_beta(Z, G, mu, phi, beta, tau, zeta, eta, beta_thr, s2_lims):
+def _sample_beta(Z, G, mu, phi, beta, tau, zeta, eta, beta_thr, s2_lims, parallel):
     """TODO."""
     # identify irrelevant genes and markers
     idxs = (_nmp.abs(beta) > beta_thr) & (zeta * eta * tau[:, None] < 1 / s2_lims[0])
@@ -233,7 +179,7 @@ def _sample_beta(Z, G, mu, phi, beta, tau, zeta, eta, beta_thr, s2_lims):
     eta = eta[idxs_markers]
     tau = tau[idxs_genes]
 
-    beta[_nmp.ix_(idxs_genes, idxs_markers)] = _sample_beta_(Z, G, mu, phi, beta_, tau, zeta, eta)
+    beta[_nmp.ix_(idxs_genes, idxs_markers)] = _sample_beta_(Z, G, mu, phi, beta_, tau, zeta, eta, parallel)
 
     #
     return beta
