@@ -214,7 +214,7 @@ def simulate_genotypes(MAF, n_samples=1000, n_markers=100):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 10), size=2, pois=0.05, outliers=0.05):
+def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 10), size=2, pois=0.1, outliers=0.1):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size if n_genes is None else n_genes
@@ -234,11 +234,8 @@ def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 1
     mu, phi = mu[idxs], phi[idxs]
 
     # poisson distributed genes
-    idxs = _rnd.choice(n_genes, int(n_genes * pois), replace=False)
-    phi[idxs] = 1e-20
-
-    # outliers
-    # TODO
+    pois = _rnd.choice(n_genes, int(n_genes * pois), replace=False)
+    phi[pois] = 1e-20
 
     # coefficients
     beta = _nmp.zeros((n_genes, n_markers))
@@ -246,32 +243,40 @@ def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 1
     # isolated eQTLs
     eQTL_idxs_markers = _rnd.choice(n_markers, n_eQTLs, replace=False)
     eQTL_idxs_genes = _rnd.choice(n_genes, n_eQTLs, replace=False)
-    beta[(eQTL_idxs_genes, eQTL_idxs_markers)] = _rnd.uniform(-1, 1, size=n_eQTLs)
+    beta[(eQTL_idxs_genes, eQTL_idxs_markers)] = 1 + _rnd.exponential(size=n_eQTLs)
 
     # hotspots
     if n_markers_hot > 0:
         hot_idxs_markers = _rnd.choice(n_markers, n_markers_hot, replace=False)
         hot_idxs_genes = _nmp.hstack([_rnd.choice(n_genes, (n_genes_hot, 1), replace=False) for _ in hot_idxs_markers])
-        beta[hot_idxs_genes, hot_idxs_markers] = _rnd.uniform(-1, 1, size=(n_genes_hot, n_markers_hot))
+        beta[hot_idxs_genes, hot_idxs_markers] = 1 + _rnd.exponential(size=(n_genes_hot, n_markers_hot))
 
     # polymarkers effects
     if n_genes_poly > 0:
         poly_idxs_genes = _rnd.choice(n_genes, (n_genes_poly, 1), replace=False)
         poly_idxs_markers = _nmp.vstack([_rnd.choice(n_markers, n_markers_poly, replace=False) for _ in poly_idxs_genes])
-        beta[poly_idxs_genes, poly_idxs_markers] = _rnd.uniform(-1, 1, size=(n_genes_poly, n_markers_poly))
+        beta[poly_idxs_genes, poly_idxs_markers] = 1 + _rnd.exponential(size=(n_genes_poly, n_markers_poly))
+
+    beta = beta * _rnd.choice([-1, 1], size=beta.shape)
 
     # scale coefficients
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
 
     GBT = G.dot(beta.T)
-    mx = _nmp.max(_nmp.abs(GBT))
-    beta = beta / mx * _nmp.log(size)
+    mx = _nmp.max(_nmp.abs(GBT), 0)
+    idxs = mx != 0
+    beta[idxs, :] = beta[idxs, :] / mx[idxs, None] * _nmp.log(size)
 
     # compute phenotype
     GBT = G.dot(beta.T)
     Y = _rnd.normal(GBT, 1)
     Z = sample_nbinom(mu * _nmp.exp(GBT), phi)
-    # Z = sample_nbinom(mu * _nmp.exp(Y), phi)
+
+    # outliers
+    n_samples, _ = G.shape
+    outliers = _rnd.choice(n_samples * n_genes, size=int(outliers * n_samples * n_genes))
+    outliers = _nmp.asarray(_nmp.unravel_index(outliers, (n_samples, n_genes)))
+    # Z[outliers] = Z[outliers] * _rnd.uniform(5, 10, size=outliers.size)
 
     # remove genes with zero variance
     idxs = _nmp.std(Z, 0) > 0
@@ -281,7 +286,7 @@ def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 1
     beta = beta[idxs, :]
 
     #
-    return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta}
+    return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta, 'pois': pois, 'outliers': outliers}
 
 
 def calculate_metrics(beta, beta_true, beta_thr=1e-6):
@@ -290,8 +295,8 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     beta_true[_nmp.abs(beta_true) < beta_thr] = 0
 
     # standardize
-    beta = beta / _nmp.abs(beta).sum()
-    beta_true = beta_true / _nmp.abs(beta_true).sum()
+    beta = beta if _nmp.all(beta == 0) else beta / _nmp.abs(beta).sum()
+    beta_true = beta_true if _nmp.all(beta_true == 0) else beta_true / _nmp.abs(beta_true).sum()
 
     # matrix of hits
     hits = _nmp.abs(_nmp.sign(beta))
@@ -303,7 +308,7 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     FP = _nmp.sum((hits == 1) & (hits_true == 0))
     FN = _nmp.sum((hits == 0) & (hits_true == 1))
 
-    # assert TP + TN + FP + FN == beta.size
+    assert TP + TN + FP + FN == beta.size
 
     # various metrics
     TPR = TP / (TP + FN)  # true positive rate
@@ -321,7 +326,7 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
 
     # average standardised residual among true positives
     idxs = (hits == 1) & (hits_true == 1)
-    RSS = _nmp.mean(((beta[idxs] - beta_true[idxs]) / beta_true[idxs])**2)
+    RSS = _nmp.mean(((beta[idxs] - beta_true[idxs]) / beta_true[idxs])**2) if _nmp.any(idxs) else _nmp.nan
 
     #
     return {
