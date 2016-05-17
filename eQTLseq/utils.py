@@ -9,9 +9,9 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 import scipy.stats as _stats
 
-import rpy2.robjects as _R
-import rpy2.robjects.numpy2ri
-rpy2.robjects.numpy2ri.activate()
+# import rpy2.robjects as _R
+# import rpy2.robjects.numpy2ri
+# rpy2.robjects.numpy2ri.activate()
 
 
 def solve_chol_one(L, b):
@@ -214,24 +214,16 @@ def simulate_genotypes(MAF, n_samples=1000, n_markers=100):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 10), size=2, pois=0.1, outliers=0.1):
+def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.1, out=(0.01, 5, 10)):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
-    n_genes = phi.size if n_genes is None else n_genes
-    n_markers_hot, n_genes_hot = hot
-    n_genes_poly, n_markers_poly = poly
+    n_genes = phi.size
+    n_markers_hot, n_genes_hot, n_genes_poly, n_markers_poly = pattern
 
-    assert n_markers > n_markers_hot
-    assert n_genes > n_genes_hot
-    assert n_genes > n_genes_poly
-    assert n_markers > n_markers_poly
-
-    assert n_genes <= phi.size
+    assert (n_markers > n_markers_hot) & (n_markers > n_markers_poly)
+    assert (n_genes > n_genes_hot) & (n_genes > n_genes_poly)
+    assert _nmp.all(_nmp.std(G, 0) > 0) and _nmp.all(_nmp.std(G, 1) > 0)
     assert size > 1
-
-    # mean and dispersion parameters
-    idxs = _rnd.choice(phi.size, n_genes, replace=False)
-    mu, phi = mu[idxs], phi[idxs]
 
     # poisson distributed genes
     pois = _rnd.choice(n_genes, int(n_genes * pois), replace=False)
@@ -240,18 +232,13 @@ def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 1
     # coefficients
     beta = _nmp.zeros((n_genes, n_markers))
 
-    # isolated eQTLs
-    eQTL_idxs_markers = _rnd.choice(n_markers, n_eQTLs, replace=False)
-    eQTL_idxs_genes = _rnd.choice(n_genes, n_eQTLs, replace=False)
-    beta[(eQTL_idxs_genes, eQTL_idxs_markers)] = 1 + _rnd.exponential(size=n_eQTLs)
-
     # hotspots
     if n_markers_hot > 0:
         hot_idxs_markers = _rnd.choice(n_markers, n_markers_hot, replace=False)
         hot_idxs_genes = _nmp.hstack([_rnd.choice(n_genes, (n_genes_hot, 1), replace=False) for _ in hot_idxs_markers])
         beta[hot_idxs_genes, hot_idxs_markers] = 1 + _rnd.exponential(size=(n_genes_hot, n_markers_hot))
 
-    # polymarkers effects
+    # polymarker effects
     if n_genes_poly > 0:
         poly_idxs_genes = _rnd.choice(n_genes, (n_genes_poly, 1), replace=False)
         poly_idxs_markers = _nmp.vstack([_rnd.choice(n_markers, n_markers_poly, replace=False) for _ in poly_idxs_genes])
@@ -274,9 +261,9 @@ def simulate_eQTLs(G, mu, phi, n_genes=None, n_eQTLs=10, hot=(2, 10), poly=(2, 1
 
     # outliers
     n_samples, _ = G.shape
-    outliers = _rnd.choice(n_samples * n_genes, size=int(outliers * n_samples * n_genes))
-    outliers = _nmp.asarray(_nmp.unravel_index(outliers, (n_samples, n_genes)))
-    # Z[outliers] = Z[outliers] * _rnd.uniform(5, 10, size=outliers.size)
+    outliers = _rnd.choice(n_samples * n_genes, size=int(out[0] * n_samples * n_genes), replace=False)
+    outliers = _nmp.unravel_index(outliers, (n_samples, n_genes))
+    Z[outliers] = Z[outliers] * _rnd.uniform(out[1], out[2], size=outliers[0].size)
 
     # remove genes with zero variance
     idxs = _nmp.std(Z, 0) > 0
