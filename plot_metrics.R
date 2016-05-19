@@ -4,7 +4,7 @@ require('dplyr')
 ########################################################################################################################
 ########################################################################################################################
 
-metrics = read.table('metrics.txt', stringsAsFactors = F, sep = ',', header = T)
+metrics = read.table('metrics_0_1.txt', stringsAsFactors = F, sep = ',', header = T)
 
 ########################################################################################################################
 ########################################################################################################################
@@ -29,7 +29,7 @@ metrics_flat = metrics %>%
 mdls = c('nbin4', 'pois', 'log', 'bcox', 'blom')
 metric = 'M'
 metrics_filt = metrics_flat %>%
-  filter(METRIC == metric, MODEL %in% mdls, SIZE == 8) %>%
+  filter(METRIC == metric, MODEL %in% mdls, SPARSITY %in% c(1,2,8,32,64), SIZE == 4) %>%
   group_by(METRIC, MODEL, NSAMPLES, SPARSITY, SIZE) %>%
   arrange(desc(VALUE)) %>%
   slice(1:3) %>%
