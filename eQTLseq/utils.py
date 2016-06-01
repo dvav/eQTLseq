@@ -9,9 +9,9 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 import scipy.stats as _stats
 
-# import rpy2.robjects as _R
-# import rpy2.robjects.numpy2ri
-# rpy2.robjects.numpy2ri.activate()
+import rpy2.robjects as _R
+import rpy2.robjects.numpy2ri
+rpy2.robjects.numpy2ri.activate()
 
 
 def solve_chol_one(L, b):
@@ -214,7 +214,7 @@ def simulate_genotypes(MAF, n_samples=1000, n_markers=100):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.1, out=(0.01, 5, 10)):
+def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=(0.05, 5, 10)):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size
@@ -226,8 +226,9 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.1, out=(0.0
     assert size > 1
 
     # poisson distributed genes
-    pois = _rnd.choice(n_genes, int(n_genes * pois), replace=False)
-    phi[pois] = 1e-20
+    poisson = _nmp.zeros(n_genes, dtype='bool')
+    poisson[_rnd.choice(n_genes, int(n_genes * pois), replace=False)] = True
+    phi[poisson] = 1e-20
 
     # coefficients
     beta = _nmp.zeros((n_genes, n_markers))
@@ -261,9 +262,10 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.1, out=(0.0
 
     # outliers
     n_samples, _ = G.shape
-    outliers = _rnd.choice(n_samples * n_genes, size=int(out[0] * n_samples * n_genes), replace=False)
-    outliers = _nmp.unravel_index(outliers, (n_samples, n_genes))
-    Z[outliers] = Z[outliers] * _rnd.uniform(out[1], out[2], size=outliers[0].size)
+    outliers = _nmp.zeros((n_samples, n_genes), dtype='bool')
+    for i in range(n_samples):
+        outliers[i, _rnd.choice(n_genes, size=int(out[0] * n_genes), replace=False)] = True
+    Z[outliers] = Z[outliers] * _rnd.uniform(out[1], out[2], size=_nmp.count_nonzero(outliers))
 
     # remove genes with zero variance
     idxs = _nmp.std(Z, 0) > 0
@@ -271,9 +273,11 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.1, out=(0.0
     mu = mu[idxs]
     phi = phi[idxs]
     beta = beta[idxs, :]
+    poisson = poisson[idxs]
+    outliers = outliers[:, idxs]
 
     #
-    return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta, 'pois': pois, 'outliers': outliers}
+    return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta, 'poisson': poisson, 'outliers': outliers.T}
 
 
 def calculate_metrics(beta, beta_true, beta_thr=1e-6):
