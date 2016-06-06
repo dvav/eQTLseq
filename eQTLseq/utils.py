@@ -214,7 +214,7 @@ def simulate_genotypes(MAF, n_samples=1000, n_markers=100):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=(0.05, 5, 10)):
+def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S', 0.05, 5, 10)):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size
@@ -224,6 +224,8 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=(0.0
     assert (n_genes > n_genes_hot) & (n_genes > n_genes_poly)
     assert _nmp.all(_nmp.std(G, 0) > 0) and _nmp.all(_nmp.std(G, 1) > 0)
     assert size > 1
+    assert 0 <= pois < 1
+    assert out[0] in ['R', 'S'] and 0 <= out[1] < 1 and out[2] > 0 and out[2] < out[3]
 
     # poisson distributed genes
     poisson = _nmp.zeros(n_genes, dtype='bool')
@@ -262,10 +264,15 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=(0.0
 
     # outliers
     n_samples, _ = G.shape
-    outliers = _nmp.zeros((n_samples, n_genes), dtype='bool')
-    for i in range(n_samples):
-        outliers[i, _rnd.choice(n_genes, size=int(out[0] * n_genes), replace=False)] = True
-    Z[outliers] = Z[outliers] * _rnd.uniform(out[1], out[2], size=_nmp.count_nonzero(outliers))
+    if out[0] == 'R':  # random outlier simulation
+        outliers = _rnd.choice((True, False), size=(n_samples, n_genes), p=(out[1], 1 - out[1]))
+    else:  # single outlier simulation
+        n = int(n_genes * out[1])
+        outliers = _nmp.zeros((n_samples, n_genes), dtype='bool')
+        gene_idxs = _rnd.choice(n_genes, size=n, replace=False)
+        sample_idxs = _rnd.choice(n_samples, size=n, replace=True)
+        outliers[sample_idxs, gene_idxs] = True
+    Z[outliers] = Z[outliers] * _rnd.uniform(out[2], out[3], size=_nmp.count_nonzero(outliers))
 
     # remove genes with zero variance
     idxs = _nmp.std(Z, 0) > 0

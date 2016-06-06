@@ -4,7 +4,7 @@ require('dplyr')
 ########################################################################################################################
 ########################################################################################################################
 
-metrics = read.table('metrics_0_1.txt', stringsAsFactors = F, sep = ',', header = T)
+metrics = read.table('metrics.txt', stringsAsFactors = F, sep = ',', header = T)
 
 ########################################################################################################################
 ########################################################################################################################
@@ -21,32 +21,34 @@ metrics_flat = metrics %>%
   mutate(MODEL = gsub('Poisson', 'pois', MODEL)) %>%
   mutate(MODEL = gsub('boxcox', 'bcox', MODEL)) %>%
   select(-c(NGENES, NGENES_HOT, NGENES_POLY, NMARKERS, NMARKERS_HOT, NMARKERS_POLY, TRANS)) %>%
-  tidyr::gather(METRIC, VALUE, -c(MODEL, NSAMPLES, SPARSITY, SIZE), convert = T)
+  tidyr::gather(METRIC, VALUE, -c(MODEL, NSAMPLES, SPARSITY, SIZE, NOISE), convert = T)
 
 ########################################################################################################################
 ########################################################################################################################
 
-mdls = c('nbin4', 'pois', 'log', 'bcox', 'blom')
+mdls = c('nbin4', 'pois', 'bin','log', 'bcox', 'blom', 'voom', 'vst')
 metric = 'M'
 metrics_filt = metrics_flat %>%
-  filter(METRIC == metric, MODEL %in% mdls, SPARSITY %in% c(1,2,8,32,64), SIZE == 4) %>%
-  group_by(METRIC, MODEL, NSAMPLES, SPARSITY, SIZE) %>%
+  filter(METRIC == metric, MODEL %in% mdls, SIZE == 8, NOISE == 1) %>%
+  group_by(METRIC, MODEL, NSAMPLES, SPARSITY, SIZE, NOISE) %>%
   arrange(desc(VALUE)) %>%
   slice(1:3) %>%
   ungroup() %>%
   mutate(MODEL = factor(MODEL, levels = mdls, ordered = T))
 
 means = metrics_filt %>%
-  group_by(METRIC, NSAMPLES, SPARSITY, SIZE) %>%
-  summarise(MEAN = mean(VALUE)) %>%
+  group_by(METRIC, NSAMPLES, SPARSITY, SIZE, NOISE) %>%
+  summarise(MEAN = mean(VALUE), SD = sd(VALUE)) %>%
   ungroup()
 
 print(
   ggplot(data = metrics_filt, mapping = aes(x = MODEL, y = VALUE, fill = MODEL)) +
     geom_boxplot(alpha = 0.5, width = 0.5) +
-    geom_hline(data = means, aes(yintercept = MEAN), linetype = 'dashed') +
+    # geom_hline(data = means, aes(yintercept = MEAN), linetype = 'dashed') +
+    # geom_hline(data = means, aes(yintercept = MAX), linetype = 'dashed', color = 'red') +
+    # geom_hline(data = means, aes(yintercept = MEAN - SD), linetype = 'dashed') +
     theme(legend.position = 'none', axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     scale_x_discrete(name = '') +
     scale_y_continuous(name = metric) +
-    facet_grid(NSAMPLES ~ SPARSITY)
+    facet_grid(SPARSITY ~ NSAMPLES)
 )
