@@ -28,11 +28,10 @@ class ModelNormalGibbs(object):
         """TODO."""
         YTY, GTG, GTY = args['YTY'], args['GTG'], args['GTY']
         beta_thr, s2_lims, n_samples = args['beta_thr'], args['s2_lims'], args['n_samples']
-        parallel = args['parallel']
 
         # sample beta and tau
         self.beta, self.tau = _sample_beta_tau(YTY, GTG, GTY, self.beta, self.tau, self.zeta, self.eta, n_samples,
-                                               beta_thr, s2_lims, parallel)
+                                               beta_thr, s2_lims)
 
         # sample eta and zeta
         self.zeta = _sample_zeta(self.beta, self.tau, self.eta)
@@ -72,7 +71,7 @@ class ModelNormalGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
 
-def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims, parallel):
+def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
     """TODO."""
     _, n_markers = zeta.shape
 
@@ -86,13 +85,13 @@ def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims, parallel):
     theta = zeta * eta
     A = tau[:, None, None] * (GTG + theta[:, :, None] * _nmp.identity(n_markers))
     b = tau * GTY
-    beta = _utils.sample_multivariate_normal_many(b.T, A, parallel)
+    beta = _utils.sample_multivariate_normal_many(b.T, A)
 
     ##
     return beta, tau
 
 
-def _sample_beta_tau(YTY, GTG, GTY, beta, tau, zeta, eta, n_samples, beta_thr, s2_lims, parallel):
+def _sample_beta_tau(YTY, GTG, GTY, beta, tau, zeta, eta, n_samples, beta_thr, s2_lims):
     """TODO."""
     # identify irrelevant genes and markers and exclude them
     idxs = (_nmp.abs(beta) > beta_thr) & (tau[:, None] * zeta * eta < 1 / s2_lims[0])
@@ -108,7 +107,7 @@ def _sample_beta_tau(YTY, GTG, GTY, beta, tau, zeta, eta, n_samples, beta_thr, s
     eta = eta[idxs_markers]
 
     beta[_nmp.ix_(idxs_genes, idxs_markers)], tau[idxs_genes] = \
-        _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims, parallel)
+        _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims)
 
     ##
     return beta, tau

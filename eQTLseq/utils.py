@@ -9,6 +9,8 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 import scipy.stats as _stats
 
+from eQTLseq import parallel as _prl
+
 import rpy2.robjects as _R
 import rpy2.robjects.numpy2ri
 rpy2.robjects.numpy2ri.activate()
@@ -42,12 +44,12 @@ def sample_multivariate_normal_one(L, b, z):
     return y + mu
 
 
-def sample_multivariate_normal_many(b, A, parallel):
+def sample_multivariate_normal_many(b, A):
     """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
     z = _rnd.normal(size=b.shape)
     L = _nmp.linalg.cholesky(A)
-    y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)] if parallel is None else \
-        parallel.starmap(sample_multivariate_normal_one, zip(L, b, z))
+    y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)] if _prl.Pool is None else \
+        _prl.Pool.starmap(sample_multivariate_normal_one, zip(L, b, z))
 
     # return
     return _nmp.asarray(y)
