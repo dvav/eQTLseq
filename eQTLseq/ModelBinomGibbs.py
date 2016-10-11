@@ -5,6 +5,8 @@ import numpy.random as _rnd
 
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
+_EPS = _nmp.finfo('float').eps
+
 
 class ModelBinomGibbs(_ModelNormalGibbs):
     """An overdispersed Binomial model estimated using Gibbs sampling."""
@@ -86,6 +88,9 @@ def _sample_Y(Z, G, mu, Y, beta, tau):
 
     Y_ = _rnd.normal(G.dot(beta.T), 1 / _nmp.sqrt(tau))
     pi_ = mu / (mu + _nmp.exp(-Y_))
+
+    pi = _nmp.clip(pi, _EPS, 1 - _EPS)    # bound pi/pi_ between (0,1) to avoid ...
+    pi_ = _nmp.clip(pi_, _EPS, 1 -_EPS)   # divide-by-zero errors
 
     # compute loglik
     loglik = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log1p(-pi)

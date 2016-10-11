@@ -5,6 +5,7 @@ import numpy.random as _rnd
 
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
+_EPS = _nmp.finfo('float').eps
 
 class ModelPoissonGibbs(_ModelNormalGibbs):
     """An overdispersed Poisson model estimated using Gibbs sampling."""
@@ -82,8 +83,8 @@ def _sample_Y(Z, G, mu, Y, beta, tau):
     means_ = mu * _nmp.exp(Y_)
 
     # compute loglik
-    loglik = Z * _nmp.log(means) - means
-    loglik_ = Z * _nmp.log(means_) - means_
+    loglik = Z * _nmp.log(means + _EPS) - means     # add a small number to avoid ...
+    loglik_ = Z * _nmp.log(means_ + _EPS) - means_  # ... division-by-zero errors in log
 
     # do Metropolis step
     idxs = _nmp.log(_rnd.rand(n_samples, n_genes)) < loglik_ - loglik

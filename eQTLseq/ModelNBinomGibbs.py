@@ -6,6 +6,7 @@ import scipy.special as _spc
 
 import eQTLseq.utils as _utils
 
+_EPS = _nmp.finfo('float').eps
 
 class ModelNBinomGibbs(object):
     """A negative binomial model estimated using Gibbs sampling."""
@@ -93,6 +94,9 @@ def _sample_phi(Z, G, mu, phi, beta, mu_phi, tau_phi):
     phi_ = _nmp.exp(mu_phi + _rnd.randn(n_genes) / _nmp.sqrt(tau_phi))
     alpha_ = 1 / phi_
     pi_ = means / (alpha_ + means)
+
+    pi = _nmp.clip(pi, _EPS, 1 - _EPS)    # bound pi/pi_ between (0,1) to avoid ...
+    pi_ = _nmp.clip(pi_, _EPS, 1 -_EPS)   # divide-by-zero errors
 
     # compute loglik
     loglik = (_spc.gammaln(Z + alpha) - _spc.gammaln(alpha) + alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)).sum(0)
