@@ -90,7 +90,7 @@ def _sample_Y(Z, G, mu, Y, beta, tau):
     pi_ = mu / (mu + _nmp.exp(-Y_))
 
     pi = _nmp.clip(pi, _EPS, 1 - _EPS)    # bound pi/pi_ between (0,1) to avoid ...
-    pi_ = _nmp.clip(pi_, _EPS, 1 -_EPS)   # divide-by-zero errors
+    pi_ = _nmp.clip(pi_, _EPS, 1 - _EPS)   # divide-by-zero errors
 
     # compute loglik
     loglik = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log1p(-pi)

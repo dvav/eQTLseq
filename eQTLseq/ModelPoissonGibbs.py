@@ -7,6 +7,7 @@ from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
 _EPS = _nmp.finfo('float').eps
 
+
 class ModelPoissonGibbs(_ModelNormalGibbs):
     """An overdispersed Poisson model estimated using Gibbs sampling."""
 
