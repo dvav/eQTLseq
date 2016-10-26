@@ -4,6 +4,7 @@ import multiprocessing as _mlp
 import sys as _sys
 
 import numpy as _nmp
+import tqdm as _tqdm
 
 from eQTLseq import parallel as _prl
 
@@ -63,19 +64,14 @@ def run(Z, G, mdl='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-6,
     state = _nmp.empty(n_iters + 1)
     state.fill(_nmp.nan)
     state[0] = 0
-    print('Starting...', file=_sys.stderr)
     _prl.Pool = None if n_threads <= 1 else _mlp.Pool(processes=n_threads)
-    for itr in range(1, n_iters + 1):
+    for itr in _tqdm.tqdm(range(1, n_iters + 1), disable=not progress):
         mdl.update(itr, **args)
         state[itr] = mdl.get_state(**args)
-        if progress:
-            print('\r' + 'Iteration {0} of {1}'.format(itr, n_iters), end='', file=_sys.stderr)
 
     if _prl.Pool is not None:
         _prl.Pool.close()
         _prl.Pool.join()
-
-    print('\nDone!', file=_sys.stderr)
 
     #
     return {
