@@ -1,7 +1,6 @@
 """Implements run()."""
 
 import multiprocessing as _mlp
-import sys as _sys
 
 import numpy as _nmp
 import tqdm as _tqdm
