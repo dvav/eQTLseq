@@ -2,6 +2,7 @@
 
 import numpy as _nmp
 import numpy.random as _rnd
+import scipy.special as _spc
 
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
@@ -58,9 +59,13 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
         extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
 
-        return {'mu': mu_mean, 'mu_var': mu_var, 'Y': Y_mean.T, 'Y_var': Y_var.T, **extra}
+        return {
+            'mu': mu_mean, 'mu_var': mu_var,
+            'Y': Y_mean.T, 'Y_var': Y_var.T,
+            **extra
+        }
 
-    def get_log_likelihood(self, **args):
+    def get_state(self, **args):
         """TODO."""
         return super().get_state()
 
@@ -81,7 +86,7 @@ def _sample_mu(Z, Y, a0=0.5, b0=0.5):
 
 def _sample_Y(Z, G, mu, Y, beta, tau):
     n_samples, n_genes = Z.shape
-    n = Z.sum(1)
+    N = Z.sum(1)
 
     # sample proposals from a normal prior
     pi = mu / (mu + _nmp.exp(-Y))
@@ -93,8 +98,8 @@ def _sample_Y(Z, G, mu, Y, beta, tau):
     pi_ = _nmp.clip(pi_, _EPS, 1 - _EPS)   # divide-by-zero errors
 
     # compute loglik
-    loglik = Z * _nmp.log(pi) + (n[:, None] - Z) * _nmp.log1p(-pi)
-    loglik_ = Z * _nmp.log(pi_) + (n[:, None] - Z) * _nmp.log1p(-pi_)
+    loglik = Z * _nmp.log(pi) + (N[:, None] - Z) * _nmp.log1p(-pi)
+    loglik_ = Z * _nmp.log(pi_) + (N[:, None] - Z) * _nmp.log1p(-pi_)
 
     # do Metropolis step
     idxs = _nmp.log(_rnd.rand(n_samples, n_genes)) < loglik_ - loglik
