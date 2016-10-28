@@ -70,6 +70,22 @@ class ModelNormalGibbs(object):
         """TODO."""
         return _nmp.sqrt((self.beta**2).sum())
 
+    @staticmethod
+    def loglik(Y, G, res, scale=True):
+        """TODO."""
+        Y = Y.T
+
+        G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+        Y = (Y - _nmp.mean(Y, 0)) / _nmp.std(Y, 0) if scale else Y - _nmp.mean(Y, 0)
+
+        beta = res['beta']
+        tau = res['tau']
+
+        resid = Y - G.dot(beta.T)
+
+        ##
+        return - 0.5 * _nmp.log(2 * _nmp.pi) + 0.5 * _nmp.log(tau) - 0.5 * tau * resid**2
+
 
 def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
     """TODO."""

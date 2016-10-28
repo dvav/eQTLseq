@@ -83,6 +83,24 @@ class ModelNBinomGibbs(object):
         """TODO."""
         return _nmp.sqrt((self.beta**2).sum())
 
+    @staticmethod
+    def loglik(Z, G, res):
+        """TODO."""
+        Z = Z.T
+        G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+
+        beta = res['beta']
+        mu = res['mu']
+        alpha = 1 / res['phi']
+
+        means = mu * _nmp.exp(G.dot(beta.T))
+        pi = means / (alpha + means)
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+
+        ##
+        return _spc.gammaln(Z + alpha) - _spc.gammaln(alpha) - _spc.gammaln(Z + 1) + \
+            alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)
+
 
 def _sample_phi(Z, G, mu, phi, beta, mu_phi, tau_phi):
     n_samples, n_genes = Z.shape

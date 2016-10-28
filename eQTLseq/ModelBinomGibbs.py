@@ -69,6 +69,25 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         """TODO."""
         return super().get_state()
 
+    @staticmethod
+    def loglik(Z, G, res):
+        """TODO."""
+        Z = Z.T
+        G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+
+        beta = res['beta']
+        mu = res['mu']
+
+        N = Z.sum(1)
+        Ymean = G.dot(beta.T)
+        Ymean = Ymean - _nmp.mean(Ymean, 0)
+        pi = mu / (mu + _nmp.exp(-Ymean))
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+
+        ##
+        return Z * _nmp.log(pi) + (N[:, None] - Z) * _nmp.log1p(-pi) + \
+            _spc.gammaln(N[:, None] + 1) - _spc.gammaln(Z + 1) - _spc.gammaln(N[:, None] - Z + 1)
+
 
 def _sample_mu(Z, Y, a0=0.5, b0=0.5):
     Z = Z * _nmp.exp(-Y)

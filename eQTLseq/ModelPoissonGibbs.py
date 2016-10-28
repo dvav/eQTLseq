@@ -2,6 +2,7 @@
 
 import numpy as _nmp
 import numpy.random as _rnd
+import scipy.special as _spc
 
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
@@ -58,11 +59,31 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
         extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
 
-        return {'mu': mu_mean, 'mu_var': mu_var, 'Y': Y_mean.T, 'Y_var': Y_var.T, **extra}
+        return {
+            'mu': mu_mean, 'mu_var': mu_var,
+            'Y': Y_mean.T, 'Y_var': Y_var.T,
+            **extra
+        }
 
     def get_state(self, **args):
         """TODO."""
         return super().get_state()
+
+    @staticmethod
+    def loglik(Z, G, res):
+        """TODO."""
+        Z = Z.T
+        G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+
+        beta = res['beta']
+        mu = res['mu']
+
+        Ymean = G.dot(beta.T)
+        Ymean = Ymean - _nmp.mean(Ymean, 0)
+        means = mu * _nmp.exp(Ymean)
+
+        ##
+        return Z * _nmp.log(means + _EPS) - means - _spc.gammaln(Z + 1)
 
 
 def _sample_mu(Z, Y):
