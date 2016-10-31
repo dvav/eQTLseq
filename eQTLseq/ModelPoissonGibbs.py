@@ -2,7 +2,8 @@
 
 import numpy as _nmp
 import numpy.random as _rnd
-import scipy.special as _spc
+
+import eQTLseq.utils as _utils
 
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
@@ -33,7 +34,7 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         # update beta, tau, zeta and eta
         YTY = _nmp.sum(self.Y**2, 0)
         GTY = G.T.dot(self.Y)
-        super().update(itr, YTY=YTY, GTY=GTY, **args)
+        super().update(itr, **{**args, 'YTY': YTY, 'GTY': GTY})
 
         # sample Y
         self.Y = _sample_Y(Z, G, self.mu, self.Y, self.beta, self.tau)
@@ -65,25 +66,40 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
             **extra
         }
 
-    def get_state(self, **args):
-        """TODO."""
-        return super().get_state()
-
     @staticmethod
-    def loglik(Z, G, res):
+    def get_error(Z, G, res):
         """TODO."""
-        Z = Z.T
-        G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+        _, n_genes = Z.shape
 
         beta = res['beta']
         mu = res['mu']
 
-        Ymean = G.dot(beta.T)
-        Ymean = Ymean - _nmp.mean(Ymean, 0)
-        means = mu * _nmp.exp(Ymean)
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        Zhat = mu * _nmp.exp(Yhat)
+
+        # Z = _nmp.c_[Z, Zhat]
+        # Z = _utils.blom(Z.T).T
+        # Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
 
         ##
-        return Z * _nmp.log(means + _EPS) - means - _spc.gammaln(Z + 1)
+        return ((_nmp.log(Z + 1) - _nmp.log(Zhat + 1))**2).sum() / Z.size
+
+    # @staticmethod
+    # def get_error(Z, G, res):
+    #     """TODO."""
+    #     _, n_genes = Z.shape
+    #
+    #     beta = res['beta']
+    #     mu = res['mu']
+    #
+    #     Yhat = G.dot(beta.T)
+    #     Yhat = Yhat - _nmp.mean(Yhat, 0)
+    #     Zhat = mu * _nmp.exp(Yhat)
+    #     s2 = Zhat
+    #
+    #     ##
+    #     return ((Z - Zhat)**2 / s2).sum() / Z.size
 
 
 def _sample_mu(Z, Y):

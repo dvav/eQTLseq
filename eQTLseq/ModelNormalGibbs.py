@@ -71,20 +71,34 @@ class ModelNormalGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
     @staticmethod
-    def loglik(Y, G, res, scale=True):
+    def get_error(Y, G, res):
         """TODO."""
-        Y = Y.T
-
-        G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
-        Y = (Y - _nmp.mean(Y, 0)) / _nmp.std(Y, 0) if scale else Y - _nmp.mean(Y, 0)
+        _, n_genes = Y.shape
 
         beta = res['beta']
-        tau = res['tau']
 
-        resid = Y - G.dot(beta.T)
+        Yhat = G.dot(beta.T)
+
+        # Y = _nmp.c_[Y, Yhat]
+        # Y = _utils.blom(Y.T).T
+        # Y, Yhat = Y[:, :n_genes], Y[:, n_genes:]
 
         ##
-        return - 0.5 * _nmp.log(2 * _nmp.pi) + 0.5 * _nmp.log(tau) - 0.5 * tau * resid**2
+        return ((Y - Yhat)**2).sum() / Y.size
+
+    # @staticmethod
+    # def get_error(Y, G, res):
+    #     """TODO."""
+    #     _, n_genes = Y.shape
+    #
+    #     beta = res['beta']
+    #     tau = res['tau']
+    #
+    #     Yhat = G.dot(beta.T)
+    #     s2 = 1 / tau
+    #
+    #     ##
+    #     return ((Y - Yhat)**2 / s2).sum() / Y.size
 
 
 def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
