@@ -48,8 +48,8 @@ def sample_multivariate_normal_many(b, A):
     """Sample from the multivariate normal distribution with multiple precision matrices A and mu = A^-1 b."""
     z = _rnd.normal(size=b.shape)
     L = _nmp.linalg.cholesky(A)
-    y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)] if _prl.Pool is None else \
-        _prl.Pool.starmap(sample_multivariate_normal_one, zip(L, b, z))
+    y = [sample_multivariate_normal_one(L_, b_, z_) for L_, b_, z_ in zip(L, b, z)] if _prl.POOL is None else \
+        _prl.POOL.starmap(sample_multivariate_normal_one, zip(L, b, z))
 
     # return
     return _nmp.asarray(y)
