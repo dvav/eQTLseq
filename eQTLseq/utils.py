@@ -6,6 +6,8 @@ import scipy.linalg as _lin
 
 from eQTLseq import parallel as _prl
 
+_EPS = _nmp.finfo('float').eps
+
 
 def solve_chol_one(L, b):
     """TODO."""
@@ -112,17 +114,17 @@ def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     assert TP + TN + FP + FN == beta.size
 
     # various metrics
-    TPR = TP / (TP + FN)  # true positive rate
-    TNR = TN / (TN + FP)  # true negative rate
-    PPV = TP / (TP + FP)  # positive predictive value
-    NPV = TN / (TN + FN)  # negative predictive value
-    FPR = FP / (FP + TN)  # false positive rate
-    FDR = FP / (FP + TP)  # false discovery rate
-    FNR = FN / (FN + TP)  # false negative rate
+    TPR = TP / (TP + FN + _EPS)  # true positive rate
+    TNR = TN / (TN + FP + _EPS)  # true negative rate
+    PPV = TP / (TP + FP + _EPS)  # positive predictive value
+    NPV = TN / (TN + FN + _EPS)  # negative predictive value
+    FPR = FP / (FP + TN + _EPS)  # false positive rate
+    FDR = FP / (FP + TP + _EPS)  # false discovery rate
+    FNR = FN / (FN + TP + _EPS)  # false negative rate
 
-    MCC = (TP * TN - FP * FN) / _nmp.sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN))  # Matthew's correlation coefficient
-    ACC = (TP + TN) / (TP + FP + FN + TN)  # accuracy
-    F1 = 2 * TPR * PPV / (TPR + PPV)  # F1 score
+    MCC = (TP * TN - FP * FN) / _nmp.sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN) + _EPS)  # Matthew's correlation coef.
+    ACC = (TP + TN) / (TP + FP + FN + TN + _EPS)  # accuracy
+    F1 = 2 * TPR * PPV / (TPR + PPV + _EPS)  # F1 score
     G = _nmp.sqrt(TPR * PPV)  # G score
 
     # average standardised residual among true positives
