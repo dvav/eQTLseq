@@ -21,7 +21,6 @@ _MODELS = {
 def run(Z, G, model='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-6, s2_lims=(1e-20, 1e3), n_threads=1,
         progress=True):
     """Run an estimation algorithm for a specified number of iterations."""
-    Z = Z.T
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
 
@@ -78,8 +77,6 @@ def run(Z, G, model='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-
 
 def get_error(Z, G, res, model='Normal', scale=True):
     """TODO."""
-    Z = Z.T
-
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
     if model == 'Normal':
         Z = (Z - _nmp.mean(Z, 0)) / _nmp.std(Z, 0) if scale else Z - _nmp.mean(Z, 0)

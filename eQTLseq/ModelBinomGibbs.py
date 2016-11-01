@@ -3,8 +3,6 @@
 import numpy as _nmp
 import numpy.random as _rnd
 
-import eQTLseq.utils as _utils
-
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
 _EPS = _nmp.finfo('float').eps
