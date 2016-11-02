@@ -5,9 +5,9 @@ from eQTLseq.driver import get_error
 
 from eQTLseq.utils import calculate_metrics
 
-from eQTLseq.datasim import fit_nbinom_model
-from eQTLseq.datasim import simulate_eQTLs
-from eQTLseq.datasim import simulate_genotypes
+from eQTLseq.sim import fit_nbinom_model
+from eQTLseq.sim import simulate_eQTLs
+from eQTLseq.sim import simulate_genotypes
 
-from eQTLseq.datatrans import calculate_norm_factors
-from eQTLseq.datatrans import transform_data
+from eQTLseq.trans import calculate_norm_factors
+from eQTLseq.trans import transform_data
