@@ -65,10 +65,8 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         }
 
     @staticmethod
-    def get_error(Z, G, res):
+    def get_dev(Z, G, res):
         """TODO."""
-        _, n_genes = Z.shape
-
         beta = res['beta']
         mu = res['mu']
 
@@ -76,34 +74,38 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         Yhat = G.dot(beta.T)
         Yhat = Yhat - _nmp.mean(Yhat, 0)
         pi = mu / (mu + _nmp.exp(-Yhat))
-        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
-        Zhat = N[:, None] * pi
+        piS = Z / N[:, None]
 
-        # Z = _nmp.c_[Z, Zhat]
-        # Z = _utils.blom(Z.T).T
-        # Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        piS = _nmp.clip(piS, _EPS, 1 - _EPS)
+
+        loglik = Z * _nmp.log(pi) + (N[:, None] - Z) * _nmp.log1p(-pi)
+        loglikS = Z * _nmp.log(piS) + (N[:, None] - Z) * _nmp.log1p(-piS)
 
         ##
-        return ((_nmp.log(Z + 1) - _nmp.log(Zhat + 1))**2).sum() / Z.size
+        return 2 * (loglikS - loglik).sum()
 
-    # @staticmethod
-    # def get_error(Z, G, res):
-    #     """TODO."""
-    #     _, n_genes = Z.shape
-    #
-    #     beta = res['beta']
-    #     mu = res['mu']
-    #
-    #     N = Z.sum(1)
-    #     Yhat = G.dot(beta.T)
-    #     Yhat = Yhat - _nmp.mean(Yhat, 0)
-    #     pi = mu / (mu + _nmp.exp(-Yhat))
-    #     pi = _nmp.clip(pi, _EPS, 1 - _EPS)
-    #     Zhat = N[:, None] * pi
-    #     s2 = Zhat * (1 - pi)
-    #
-    #     ##
-    #     return ((Z - Zhat)**2 / s2).sum() / Z.size
+
+    @staticmethod
+    def get_R2(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        N = Z.sum(1)
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        pi = mu / (mu + _nmp.exp(-Yhat))
+        pi0 = mu / (mu + 1)
+
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        pi0 = _nmp.clip(pi0, _EPS, 1 - _EPS)
+
+        loglik = Z * _nmp.log(pi) + (N[:, None] - Z) * _nmp.log1p(-pi)
+        loglik0 = Z * _nmp.log(pi0) + (N[:, None] - Z) * _nmp.log1p(-pi0)
+
+        ##
+        return 1 - loglik.sum() / loglik0.sum()
 
 
 def _sample_mu(Z, Y, a0=0.5, b0=0.5):

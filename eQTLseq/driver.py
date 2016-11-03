@@ -82,4 +82,7 @@ def get_error(Z, G, res, model='Normal', scale=True):
         Z = (Z - _nmp.mean(Z, 0)) / _nmp.std(Z, 0) if scale else Z - _nmp.mean(Z, 0)
 
     ##
-    return _MODELS[model].get_error(Z, G, res)
+    return {
+        'R2': _MODELS[model].get_R2(Z, G, res),
+        'dev': _MODELS[model].get_dev(Z, G, res)
+    }

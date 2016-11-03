@@ -65,39 +65,36 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         }
 
     @staticmethod
-    def get_error(Z, G, res):
+    def get_dev(Z, G, res):
         """TODO."""
-        _, n_genes = Z.shape
-
         beta = res['beta']
         mu = res['mu']
 
         Yhat = G.dot(beta.T)
         Yhat = Yhat - _nmp.mean(Yhat, 0)
-        Zhat = mu * _nmp.exp(Yhat)
+        means = mu * _nmp.exp(Yhat)
 
-        # Z = _nmp.c_[Z, Zhat]
-        # Z = _utils.blom(Z.T).T
-        # Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
+        loglik = Z * _nmp.log(means + _EPS) - means
+        loglikS = Z * _nmp.log(Z + _EPS) - Z
 
         ##
-        return ((_nmp.log(Z + 1) - _nmp.log(Zhat + 1))**2).sum() / Z.size
+        return 2 * (loglikS - loglik).sum()
 
-    # @staticmethod
-    # def get_error(Z, G, res):
-    #     """TODO."""
-    #     _, n_genes = Z.shape
-    #
-    #     beta = res['beta']
-    #     mu = res['mu']
-    #
-    #     Yhat = G.dot(beta.T)
-    #     Yhat = Yhat - _nmp.mean(Yhat, 0)
-    #     Zhat = mu * _nmp.exp(Yhat)
-    #     s2 = Zhat
-    #
-    #     ##
-    #     return ((Z - Zhat)**2 / s2).sum() / Z.size
+    @staticmethod
+    def get_R2(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        means = mu * _nmp.exp(Yhat)
+
+        loglik = Z * _nmp.log(means + _EPS) - means
+        loglik0 = Z * _nmp.log(mu + _EPS) - mu
+
+        ##
+        return 1 - loglik.sum() / loglik0.sum()
 
 
 def _sample_mu(Z, Y):

@@ -84,36 +84,44 @@ class ModelNBinomGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
     @staticmethod
-    def get_error(Z, G, res):
+    def get_dev(Z, G, res):
         """TODO."""
-        _, n_genes = Z.shape
-
         beta = res['beta']
         mu = res['mu']
+        alpha = 1 / res['phi']
 
-        Zhat = mu * _nmp.exp(G.dot(beta.T))
+        means = mu * _nmp.exp(G.dot(beta.T))
+        pi = means / (alpha + means)
+        piS = Z / (alpha + Z)
 
-        # Z = _nmp.c_[Z, Zhat]
-        # Z = _utils.blom(Z.T).T
-        # Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        piS = _nmp.clip(piS, _EPS, 1 - _EPS)
+
+        loglik = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)
+        loglikS = alpha * _nmp.log1p(-piS) + Z * _nmp.log(piS)
 
         ##
-        return ((_nmp.log(Z + 1) - _nmp.log(Zhat + 1))**2).sum() / Z.size
+        return 2 * (loglikS - loglik).sum()
 
-    # @staticmethod
-    # def get_error(Z, G, res):
-    #     """TODO."""
-    #     _, n_genes = Z.shape
-    #
-    #     beta = res['beta']
-    #     mu = res['mu']
-    #     phi = res['phi']
-    #
-    #     Zhat = mu * _nmp.exp(G.dot(beta.T))
-    #     s2 = Zhat + phi * Zhat**2
-    #
-    #     ##
-    #     return ((Z - Zhat)**2 / s2).sum() / Z.size
+    @staticmethod
+    def get_R2(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+        alpha = 1 / res['phi']
+
+        means = mu * _nmp.exp(G.dot(beta.T))
+        pi = means / (alpha + means)
+        pi0 = mu / (alpha + mu)
+
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        pi0 = _nmp.clip(pi0, _EPS, 1 - _EPS)
+
+        loglik = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)
+        loglik0 = alpha * _nmp.log1p(-pi0) + Z * _nmp.log(pi0)
+
+        ##
+        return 1 - loglik.sum() / loglik0.sum()
 
 
 def _sample_phi(Z, G, mu, phi, beta, mu_phi, tau_phi):
