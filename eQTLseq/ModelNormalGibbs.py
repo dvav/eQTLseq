@@ -4,6 +4,9 @@ import numpy as _nmp
 import numpy.random as _rnd
 
 import eQTLseq.utils as _utils
+import eQTLseq.trans as _trans
+
+_EPS = _nmp.finfo('float').eps
 
 
 class ModelNormalGibbs(object):
@@ -71,26 +74,60 @@ class ModelNormalGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
     @staticmethod
-    def get_dev(Y, G, res):
+    def get_X2c(Y, G, res):
+        """TODO."""
+        _, n_genes = Y.shape
+
+        beta = res['beta']
+        Yhat = G.dot(beta.T)
+
+        Y = _nmp.c_[Y, Yhat]
+        Y = _trans.blom(Y.T).T
+        Y, Yhat = Y[:, :n_genes], Y[:, n_genes:]
+
+        X2 = (Y - Yhat)**2
+
+        ##
+        return X2.sum() / X2.size
+
+    @staticmethod
+    def get_X2p(Y, G, res):
         """TODO."""
         beta = res['beta']
         tau = res['tau']
+
         Yhat = G.dot(beta.T)
-        loglik = 0.5 * tau * (Y - Yhat)**2
+
+        X2 = (Y - Yhat)**2 * tau
 
         ##
-        return 2 * loglik.sum()
+        return X2.sum() / X2.size
+
+    @staticmethod
+    def get_X2(Y, G, res):
+        """TODO."""
+        beta = res['beta']
+        Yhat = G.dot(beta.T)
+
+        X2 = ((Y - Yhat) / Yhat)**2
+
+        ##
+        return X2.sum() / X2.size
 
     @staticmethod
     def get_R2(Y, G, res):
         """TODO."""
         beta = res['beta']
+        tau = res['tau']
+
         Yhat = G.dot(beta.T)
-        loglik = (Y - Yhat)**2
-        loglik0 = Y**2
+
+        loglik = - 0.5 * (Y - Yhat)**2 * tau
+        loglik0 = - 0.5 * Y**2 * tau
+        diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
 
         ##
-        return 1 - loglik.sum() / loglik0.sum()
+        return 1 - _nmp.exp(diff / diff.size)
 
 
 def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):

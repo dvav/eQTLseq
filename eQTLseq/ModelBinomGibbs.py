@@ -3,6 +3,8 @@
 import numpy as _nmp
 import numpy.random as _rnd
 
+import eQTLseq.trans as _trans
+
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
 _EPS = _nmp.finfo('float').eps
@@ -65,7 +67,31 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         }
 
     @staticmethod
-    def get_dev(Z, G, res):
+    def get_X2c(Z, G, res):
+        """TODO."""
+        _, n_genes = Z.shape
+
+        beta = res['beta']
+        mu = res['mu']
+
+        N = Z.sum(1)
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        pi = mu / (mu + _nmp.exp(-Yhat))
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        Zhat = N[:, None] * pi
+
+        Z = _nmp.c_[Z, Zhat]
+        Z = _trans.blom(Z.T).T
+        Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
+
+        X2 = (Z - Zhat)**2
+
+        ##
+        return X2.sum() / X2.size
+
+    @staticmethod
+    def get_X2p(Z, G, res):
         """TODO."""
         beta = res['beta']
         mu = res['mu']
@@ -74,17 +100,32 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         Yhat = G.dot(beta.T)
         Yhat = Yhat - _nmp.mean(Yhat, 0)
         pi = mu / (mu + _nmp.exp(-Yhat))
-        piS = Z / N[:, None]
-
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
-        piS = _nmp.clip(piS, _EPS, 1 - _EPS)
+        Zhat = N[:, None] * pi
+        s2 = Zhat * (1 - pi)
 
-        loglik = Z * _nmp.log(pi) + (N[:, None] - Z) * _nmp.log1p(-pi)
-        loglikS = Z * _nmp.log(piS) + (N[:, None] - Z) * _nmp.log1p(-piS)
+        X2 = (Z - Zhat)**2 / s2
 
         ##
-        return 2 * (loglikS - loglik).sum()
+        return X2.sum() / X2.size
 
+    @staticmethod
+    def get_X2(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        N = Z.sum(1)
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        pi = mu / (mu + _nmp.exp(-Yhat))
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        Zhat = N[:, None] * pi
+
+        X2 = ((Z - Zhat) / Zhat)**2
+
+        ##
+        return X2.sum() / X2.size
 
     @staticmethod
     def get_R2(Z, G, res):
@@ -103,9 +144,10 @@ class ModelBinomGibbs(_ModelNormalGibbs):
 
         loglik = Z * _nmp.log(pi) + (N[:, None] - Z) * _nmp.log1p(-pi)
         loglik0 = Z * _nmp.log(pi0) + (N[:, None] - Z) * _nmp.log1p(-pi0)
+        diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
 
         ##
-        return 1 - loglik.sum() / loglik0.sum()
+        return 1 - _nmp.exp(diff / diff.size)
 
 
 def _sample_mu(Z, Y, a0=0.5, b0=0.5):

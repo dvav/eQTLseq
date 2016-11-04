@@ -3,6 +3,8 @@
 import numpy as _nmp
 import numpy.random as _rnd
 
+import eQTLseq.trans as _trans
+
 from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
 
 _EPS = _nmp.finfo('float').eps
@@ -65,20 +67,56 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         }
 
     @staticmethod
-    def get_dev(Z, G, res):
+    def get_X2c(Z, G, res):
+        """TODO."""
+        _, n_genes = Z.shape
+
+        beta = res['beta']
+        mu = res['mu']
+
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        Zhat = mu * _nmp.exp(Yhat)
+
+        Z = _nmp.c_[Z, Zhat]
+        Z = _trans.blom(Z.T).T
+        Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
+
+        X2 = (Z - Zhat)**2
+
+        ##
+        return X2.sum() / X2.size
+
+    @staticmethod
+    def get_X2p(Z, G, res):
         """TODO."""
         beta = res['beta']
         mu = res['mu']
 
         Yhat = G.dot(beta.T)
         Yhat = Yhat - _nmp.mean(Yhat, 0)
-        means = mu * _nmp.exp(Yhat)
+        Zhat = mu * _nmp.exp(Yhat)
+        s2 = Zhat
 
-        loglik = Z * _nmp.log(means + _EPS) - means
-        loglikS = Z * _nmp.log(Z + _EPS) - Z
+        X2 = (Z - Zhat)**2 / s2
 
         ##
-        return 2 * (loglikS - loglik).sum()
+        return X2.sum() / X2.size
+
+    @staticmethod
+    def get_X2(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        Zhat = mu * _nmp.exp(Yhat)
+
+        X2 = ((Z - Zhat) / Zhat)**2
+
+        ##
+        return X2.sum() / X2.size
 
     @staticmethod
     def get_R2(Z, G, res):
@@ -92,9 +130,10 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
 
         loglik = Z * _nmp.log(means + _EPS) - means
         loglik0 = Z * _nmp.log(mu + _EPS) - mu
+        diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
 
         ##
-        return 1 - loglik.sum() / loglik0.sum()
+        return 1 - _nmp.exp(diff / diff.size)
 
 
 def _sample_mu(Z, Y):

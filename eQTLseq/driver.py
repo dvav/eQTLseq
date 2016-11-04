@@ -75,7 +75,7 @@ def run(Z, G, model='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-
     }
 
 
-def get_error(Z, G, res, model='Normal', scale=True):
+def get_metrics(Z, G, res, model='Normal', scale=True):
     """TODO."""
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
     if model == 'Normal':
@@ -84,5 +84,7 @@ def get_error(Z, G, res, model='Normal', scale=True):
     ##
     return {
         'R2': _MODELS[model].get_R2(Z, G, res),
-        'dev': _MODELS[model].get_dev(Z, G, res)
+        'X2': _MODELS[model].get_X2(Z, G, res),
+        'X2p': _MODELS[model].get_X2p(Z, G, res),
+        'X2c': _MODELS[model].get_X2c(Z, G, res)
     }

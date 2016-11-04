@@ -5,6 +5,7 @@ import numpy.random as _rnd
 import scipy.special as _spc
 
 import eQTLseq.utils as _utils
+import eQTLseq.trans as _trans
 
 _EPS = _nmp.finfo('float').eps
 
@@ -84,24 +85,51 @@ class ModelNBinomGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
     @staticmethod
-    def get_dev(Z, G, res):
+    def get_X2c(Z, G, res):
+        """TODO."""
+        _, n_genes = Z.shape
+
+        beta = res['beta']
+        mu = res['mu']
+
+        Zhat = mu * _nmp.exp(G.dot(beta.T))
+
+        Z = _nmp.c_[Z, Zhat]
+        Z = _trans.blom(Z.T).T
+        Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
+
+        X2 = (Z - Zhat)**2
+
+        ##
+        return X2.sum() / X2.size
+
+    @staticmethod
+    def get_X2p(Z, G, res):
         """TODO."""
         beta = res['beta']
         mu = res['mu']
-        alpha = 1 / res['phi']
+        phi = res['phi']
 
-        means = mu * _nmp.exp(G.dot(beta.T))
-        pi = means / (alpha + means)
-        piS = Z / (alpha + Z)
+        Zhat = mu * _nmp.exp(G.dot(beta.T))
+        s2 = Zhat + phi * Zhat**2
 
-        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
-        piS = _nmp.clip(piS, _EPS, 1 - _EPS)
-
-        loglik = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)
-        loglikS = alpha * _nmp.log1p(-piS) + Z * _nmp.log(piS)
+        X2 = (Z - Zhat)**2 / s2
 
         ##
-        return 2 * (loglikS - loglik).sum()
+        return X2.sum() / X2.size
+
+    @staticmethod
+    def get_X2(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Zhat = mu * _nmp.exp(G.dot(beta.T))
+
+        X2 = ((Z - Zhat) / Zhat)**2
+
+        ##
+        return X2.sum() / X2.size
 
     @staticmethod
     def get_R2(Z, G, res):
@@ -119,9 +147,10 @@ class ModelNBinomGibbs(object):
 
         loglik = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)
         loglik0 = alpha * _nmp.log1p(-pi0) + Z * _nmp.log(pi0)
+        diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
 
         ##
-        return 1 - loglik.sum() / loglik0.sum()
+        return 1 - _nmp.exp(diff / diff.size)
 
 
 def _sample_phi(Z, G, mu, phi, beta, mu_phi, tau_phi):
