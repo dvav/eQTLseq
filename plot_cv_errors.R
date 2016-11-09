@@ -1,5 +1,5 @@
-errors =
-  read_tsv('cv_errors_075.txt') %>%
+metrics =
+  read_tsv('metrics_cv_075.txt') %>%
   mutate(MODEL = ifelse(MODEL == 'Normal', TRANS, MODEL),
          MODEL = stringr::str_replace(MODEL, 'boxcox', 'bcox'),
          MODEL = stringr::str_replace(MODEL, 'NBinomial', 'nbin'),
@@ -8,15 +8,15 @@ errors =
          MODEL = factor(MODEL, levels = c('nbin', 'bin', 'pois', 'log', 'bcox', 'blom', 'voom'), ordered = T)) %>%
   select(-TRANS)
 
-ggplot(errors) +
-  geom_jitter(aes(x = MODEL, y = X2p), width = 0.2, size = 0.1, color = 'gray') +
-  geom_boxplot(aes(x = MODEL, y = X2p), width = 0.2, outlier.shape = NA) +
+ggplot(metrics) +
+  geom_jitter(aes(x = MODEL, y = PCC), width = 0.2, size = 0.1, color = 'gray') +
+  geom_boxplot(aes(x = MODEL, y = PCC), width = 0.2, outlier.shape = NA) +
   scale_y_continuous(trans = 'identity')
 
 
 
 metrics =
-  read_csv('metrics_ROC.txt') %>%
+  read_tsv('metrics_roc_075.2.txt') %>%
   mutate(MODEL = ifelse(MODEL == 'Normal', TRANS, MODEL),
          MODEL = stringr::str_replace(MODEL, 'boxcox', 'bcox'),
          MODEL = stringr::str_replace(MODEL, 'NBinomial', 'nbin'),
@@ -28,6 +28,7 @@ metrics =
   select(-TRANS)
 
 
-ggplot(metrics %>% filter(NSAMPLES == 400, M > 0)) +
-  geom_jitter(aes(x = MODEL, y = M), width = 0.2, size = 0.2, color = 'gray') +
-  geom_boxplot(aes(x = MODEL, y = M))
+ggplot(metrics %>% filter(MCC > 0)) +
+  geom_jitter(aes(x = MODEL, y = TNR), width = 0.2, size = 0.2, color = 'gray') +
+  geom_boxplot(aes(x = MODEL, y = TNR), width = 0.2, outlier.shape = NA) +
+  scale_y_continuous(trans = 'identity')
