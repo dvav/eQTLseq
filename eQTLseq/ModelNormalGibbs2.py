@@ -10,7 +10,7 @@ import eQTLseq.trans as _trans
 _EPS = _nmp.finfo('float').eps
 
 
-class ModelNormalGibbs(object):
+class ModelNormalGibbs2(object):
     """A normal model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -18,13 +18,11 @@ class ModelNormalGibbs(object):
         n_genes, n_markers = args['n_genes'], args['n_markers']
 
         # initial conditions
-        self.mu = _nmp.mean(args['Y'], 0)
         self.tau = _nmp.ones(n_genes)
         self.eta = _nmp.ones(n_markers)
         self.zeta = _nmp.ones((n_genes, n_markers))
         self.beta = _rnd.randn(n_genes, n_markers)
 
-        self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
         self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
         self.eta_sum, self.eta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
@@ -32,11 +30,11 @@ class ModelNormalGibbs(object):
 
     def update(self, itr, **args):
         """TODO."""
-        Y, G, YTY, GTG, GTY = args['Y'], args['G'], args['YTY'], args['GTG'], args['GTY']
+        YTY, GTG, GTY = args['YTY'], args['GTG'], args['GTY']
         beta_thr, s2_lims, n_samples = args['beta_thr'], args['s2_lims'], args['n_samples']
 
         # sample beta and tau
-        self.beta, self.tau = _sample_beta_tau(Y, G, YTY, GTG, GTY, self.beta, self.tau, self.zeta, self.eta, n_samples,
+        self.beta, self.tau = _sample_beta_tau(YTY, GTG, GTY, self.beta, self.tau, self.zeta, self.eta, n_samples,
                                                beta_thr, s2_lims)
 
         # sample eta and zeta
@@ -47,13 +45,11 @@ class ModelNormalGibbs(object):
         self.eta = _nmp.clip(self.eta, 1 / s2_lims[1], 1 / s2_lims[0])
 
         if(itr > args['n_burnin']):
-            self.mu_sum += self.mu
             self.tau_sum += self.tau
             self.zeta_sum += self.zeta
             self.eta_sum += self.eta
             self.beta_sum += self.beta
 
-            self.mu2_sum += self.mu**2
             self.tau2_sum += self.tau**2
             self.zeta2_sum += self.zeta**2
             self.eta2_sum += self.eta**2
@@ -62,13 +58,12 @@ class ModelNormalGibbs(object):
     def get_estimates(self, **args):
         """TODO."""
         N = args['n_iters'] - args['n_burnin']
-        mu_mean, tau_mean, zeta_mean, eta_mean, beta_mean = self.mu_sum / N, self.tau_sum / N, self.zeta_sum / N, \
-            self.eta_sum / N, self.beta_sum / N
-        mu_var, tau_var, zeta_var, eta_var, beta_var = self.mu2_sum / N - mu_mean**2, self.tau2_sum / N - tau_mean**2, \
-            self.zeta2_sum / N - zeta_mean**2, self.eta2_sum / N - eta_mean**2, self.beta2_sum / N - beta_mean**2
+        tau_mean, zeta_mean, eta_mean, beta_mean = self.tau_sum / N, self.zeta_sum / N, self.eta_sum / N, \
+            self.beta_sum / N
+        tau_var, zeta_var, eta_var, beta_var = self.tau2_sum / N - tau_mean**2, self.zeta2_sum / N - zeta_mean**2, \
+            self.eta2_sum / N - eta_mean**2, self.beta2_sum / N - beta_mean**2
 
         return {
-            'mu': mu_mean, 'mu_var': mu_var,
             'tau': tau_mean, 'tau_var': tau_var,
             'zeta': zeta_mean, 'zeta_var': zeta_var,
             'eta': eta_mean, 'eta_var': eta_var,
@@ -83,9 +78,7 @@ class ModelNormalGibbs(object):
     def get_RHO(Y, G, res):
         """TODO."""
         beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
+        Yhat = G.dot(beta.T)
 
         ##
         return _sts.spearmanr(Y.ravel(), Yhat.ravel()).correlation
@@ -94,9 +87,7 @@ class ModelNormalGibbs(object):
     def get_PCC(Y, G, res):
         """TODO."""
         beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
+        Yhat = G.dot(beta.T)
 
         ##
         return _sts.pearsonr(Y.ravel(), Yhat.ravel())[0]
@@ -191,7 +182,7 @@ def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
     return beta, tau
 
 
-def _sample_beta_tau(Y, G, YTY, GTG, GTY, beta, tau, zeta, eta, n_samples, beta_thr, s2_lims):
+def _sample_beta_tau(YTY, GTG, GTY, beta, tau, zeta, eta, n_samples, beta_thr, s2_lims):
     """TODO."""
     # identify irrelevant genes and markers and exclude them
     idxs = (_nmp.abs(beta) > beta_thr) & (tau[:, None] * zeta * eta < 1 / s2_lims[0])
@@ -208,10 +199,6 @@ def _sample_beta_tau(Y, G, YTY, GTG, GTY, beta, tau, zeta, eta, n_samples, beta_
 
     beta[_nmp.ix_(idxs_genes, idxs_markers)], tau[idxs_genes] = \
         _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims)
-
-    mean = _nmp.sum(Y - G.dot(beta.T), 0) / n_samples
-    prec = n_samples * tau
-    mu = _rnd.normal(mean, 1 / _nmp.sqrt(prec))
 
     ##
     return beta, tau

@@ -1,5 +1,5 @@
 metrics =
-  read_tsv('metrics_cv_075.txt') %>%
+  read_tsv('metrics_cv_226.txt') %>%
   mutate(MODEL = ifelse(MODEL == 'Normal', TRANS, MODEL),
          MODEL = stringr::str_replace(MODEL, 'boxcox', 'bcox'),
          MODEL = stringr::str_replace(MODEL, 'NBinomial', 'nbin'),
@@ -16,7 +16,7 @@ ggplot(metrics) +
 
 
 metrics =
-  read_tsv('metrics_roc_075.2.txt') %>%
+  read_tsv('metrics_roc_430.2.txt') %>%
   mutate(MODEL = ifelse(MODEL == 'Normal', TRANS, MODEL),
          MODEL = stringr::str_replace(MODEL, 'boxcox', 'bcox'),
          MODEL = stringr::str_replace(MODEL, 'NBinomial', 'nbin'),
@@ -29,6 +29,6 @@ metrics =
 
 
 ggplot(metrics %>% filter(MCC > 0)) +
-  geom_jitter(aes(x = MODEL, y = TNR), width = 0.2, size = 0.2, color = 'gray') +
-  geom_boxplot(aes(x = MODEL, y = TNR), width = 0.2, outlier.shape = NA) +
+  geom_jitter(aes(x = MODEL, y = MCC), width = 0.2, size = 0.2, color = 'gray') +
+  geom_boxplot(aes(x = MODEL, y = MCC), width = 0.2, outlier.shape = NA) +
   scale_y_continuous(trans = 'identity')

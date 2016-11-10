@@ -18,8 +18,8 @@ _MODELS = {
 }
 
 
-def run(Z, G, model='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-6, s2_lims=(1e-20, 1e3), n_threads=1,
-        progress=True):
+def run(Z, G, model='Normal', scaleG=True, centreZ=True, n_iters=1000, burnin=0.5, beta_thr=1e-6, s2_lims=(1e-20, 1e3),
+        n_threads=1, progress=True):
     """Run an estimation algorithm for a specified number of iterations."""
     n_samples1, n_genes = Z.shape
     n_samples2, n_markers = G.shape
@@ -31,11 +31,11 @@ def run(Z, G, model='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-
     assert 0 < beta_thr <= 1e-6
 
     # data
-    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0) if scaleG else G
     GTG = G.T.dot(G)
 
     if model == 'Normal':
-        Y = (Z - _nmp.mean(Z, 0)) / _nmp.std(Z, 0) if scale else Z - _nmp.mean(Z, 0)
+        Y = Z - _nmp.mean(Z, 0) if centreZ else Z
         YTY = _nmp.sum(Y**2, 0)
         GTY = G.T.dot(Y)
     else:
@@ -50,7 +50,8 @@ def run(Z, G, model='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-
         'n_burnin': round(n_iters * burnin),
         'beta_thr': beta_thr,
         's2_lims': s2_lims,
-        'scale': scale,
+        'scaleG': scaleG,
+        'centreZ': centreZ,
         'Z': Z,
         'Y': Y,
         'G': G,
@@ -75,16 +76,19 @@ def run(Z, G, model='Normal', scale=True, n_iters=1000, burnin=0.5, beta_thr=1e-
     }
 
 
-def get_metrics(Z, G, res, model='Normal', scale=True):
+def get_metrics(Z, G, res, model='Normal', scaleG=True, centreZ=True):
     """TODO."""
-    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0) if scaleG else G
     if model == 'Normal':
-        Z = (Z - _nmp.mean(Z, 0)) / _nmp.std(Z, 0) if scale else Z - _nmp.mean(Z, 0)
+        Z = Z - _nmp.mean(Z, 0) if centreZ else Z
 
     ##
     return {
         'R2': _MODELS[model].get_R2(Z, G, res),
         'X2': _MODELS[model].get_X2(Z, G, res),
         'X2p': _MODELS[model].get_X2p(Z, G, res),
-        'X2c': _MODELS[model].get_X2c(Z, G, res)
+        'X2c': _MODELS[model].get_X2c(Z, G, res),
+        'nMSE': _MODELS[model].get_nMSE(Z, G, res),
+        'PCC': _MODELS[model].get_PCC(Z, G, res),
+        'RHO': _MODELS[model].get_RHO(Z, G, res)
     }

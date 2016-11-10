@@ -3,6 +3,7 @@
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.special as _spc
+import scipy.stats as _sts
 
 import eQTLseq.utils as _utils
 import eQTLseq.trans as _trans
@@ -85,7 +86,29 @@ class ModelNBinomGibbs(object):
         return _nmp.sqrt((self.beta**2).sum())
 
     @staticmethod
-    def get_X2c(Z, G, res):
+    def get_RHO(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Zhat = mu * _nmp.exp(G.dot(beta.T))
+
+        ##
+        return _sts.spearmanr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1)).correlation
+
+    @staticmethod
+    def get_PCC(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Zhat = mu * _nmp.exp(G.dot(beta.T))
+
+        ##
+        return _sts.pearsonr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1))[0]
+
+    @staticmethod
+    def get_nMSE(Z, G, res):
         """TODO."""
         _, n_genes = Z.shape
 
@@ -95,10 +118,25 @@ class ModelNBinomGibbs(object):
         Zhat = mu * _nmp.exp(G.dot(beta.T))
 
         Z = _nmp.c_[Z, Zhat]
-        Z = _trans.blom(Z.T).T
+        Z = _trans.transform_data(Z.T, kind='blom').T
         Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
 
-        X2 = (Z - Zhat)**2
+        nMSE = (Z - Zhat)**2
+
+        ##
+        return nMSE.sum() / nMSE.size
+
+    @staticmethod
+    def get_X2c(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+        phi = res['phi']
+
+        Zhat = mu * _nmp.exp(G.dot(beta.T))
+        s2 = Zhat + phi * Zhat**2
+
+        X2 = (Z - Zhat)**2 / s2 + _nmp.log(s2)
 
         ##
         return X2.sum() / X2.size
@@ -126,7 +164,7 @@ class ModelNBinomGibbs(object):
 
         Zhat = mu * _nmp.exp(G.dot(beta.T))
 
-        X2 = ((Z - Zhat) / Zhat)**2
+        X2 = (Z - Zhat)**2 / Zhat
 
         ##
         return X2.sum() / X2.size

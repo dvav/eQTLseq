@@ -2,15 +2,16 @@
 
 import numpy as _nmp
 import numpy.random as _rnd
+import scipy.stats as _sts
 
 import eQTLseq.trans as _trans
 
-from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
+from eQTLseq.ModelNormalGibbs2 import ModelNormalGibbs2 as _ModelNormalGibbs2
 
 _EPS = _nmp.finfo('float').eps
 
 
-class ModelBinomGibbs(_ModelNormalGibbs):
+class ModelBinomGibbs(_ModelNormalGibbs2):
     """An overdispersed Binomial model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -67,7 +68,39 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         }
 
     @staticmethod
-    def get_X2c(Z, G, res):
+    def get_RHO(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        N = Z.sum(1)
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        pi = mu / (mu + _nmp.exp(-Yhat))
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        Zhat = N[:, None] * pi
+
+        ##
+        return _sts.spearmanr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1)).correlation
+
+    @staticmethod
+    def get_PCC(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        N = Z.sum(1)
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        pi = mu / (mu + _nmp.exp(-Yhat))
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        Zhat = N[:, None] * pi
+
+        ##
+        return _sts.pearsonr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1))[0]
+
+    @staticmethod
+    def get_nMSE(Z, G, res):
         """TODO."""
         _, n_genes = Z.shape
 
@@ -82,10 +115,29 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         Zhat = N[:, None] * pi
 
         Z = _nmp.c_[Z, Zhat]
-        Z = _trans.blom(Z.T).T
+        Z = _trans.transform_data(Z.T, kind='blom').T
         Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
 
-        X2 = (Z - Zhat)**2
+        nMSE = (Z - Zhat)**2
+
+        ##
+        return nMSE.sum() / nMSE.size
+
+    @staticmethod
+    def get_X2c(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        N = Z.sum(1)
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        pi = mu / (mu + _nmp.exp(-Yhat))
+        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        Zhat = N[:, None] * pi
+        s2 = Zhat * (1 - pi)
+
+        X2 = (Z - Zhat)**2 / s2 + _nmp.log(s2)
 
         ##
         return X2.sum() / X2.size
@@ -122,7 +174,7 @@ class ModelBinomGibbs(_ModelNormalGibbs):
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
         Zhat = N[:, None] * pi
 
-        X2 = ((Z - Zhat) / Zhat)**2
+        X2 = (Z - Zhat)**2 / Zhat
 
         ##
         return X2.sum() / X2.size

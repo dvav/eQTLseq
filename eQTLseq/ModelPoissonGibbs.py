@@ -2,15 +2,16 @@
 
 import numpy as _nmp
 import numpy.random as _rnd
+import scipy.stats as _sts
 
 import eQTLseq.trans as _trans
 
-from eQTLseq.ModelNormalGibbs import ModelNormalGibbs as _ModelNormalGibbs
+from eQTLseq.ModelNormalGibbs2 import ModelNormalGibbs2 as _ModelNormalGibbs2
 
 _EPS = _nmp.finfo('float').eps
 
 
-class ModelPoissonGibbs(_ModelNormalGibbs):
+class ModelPoissonGibbs(_ModelNormalGibbs2):
     """An overdispersed Poisson model estimated using Gibbs sampling."""
 
     def __init__(self, **args):
@@ -67,7 +68,33 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         }
 
     @staticmethod
-    def get_X2c(Z, G, res):
+    def get_RHO(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        Zhat = mu * _nmp.exp(Yhat)
+
+        ##
+        return _sts.spearmanr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1)).correlation
+
+    @staticmethod
+    def get_PCC(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        Zhat = mu * _nmp.exp(Yhat)
+
+        ##
+        return _sts.pearsonr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1))[0]
+
+    @staticmethod
+    def get_nMSE(Z, G, res):
         """TODO."""
         _, n_genes = Z.shape
 
@@ -79,10 +106,26 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         Zhat = mu * _nmp.exp(Yhat)
 
         Z = _nmp.c_[Z, Zhat]
-        Z = _trans.blom(Z.T).T
+        Z = _trans.transform_data(Z.T, kind='blom').T
         Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
 
-        X2 = (Z - Zhat)**2
+        nMSE = (Z - Zhat)**2
+
+        ##
+        return nMSE.sum() / nMSE.size
+
+    @staticmethod
+    def get_X2c(Z, G, res):
+        """TODO."""
+        beta = res['beta']
+        mu = res['mu']
+
+        Yhat = G.dot(beta.T)
+        Yhat = Yhat - _nmp.mean(Yhat, 0)
+        Zhat = mu * _nmp.exp(Yhat)
+        s2 = Zhat
+
+        X2 = (Z - Zhat)**2 / s2 + _nmp.log(s2)
 
         ##
         return X2.sum() / X2.size
@@ -113,7 +156,7 @@ class ModelPoissonGibbs(_ModelNormalGibbs):
         Yhat = Yhat - _nmp.mean(Yhat, 0)
         Zhat = mu * _nmp.exp(Yhat)
 
-        X2 = ((Z - Zhat) / Zhat)**2
+        X2 = (Z - Zhat)**2 / Zhat
 
         ##
         return X2.sum() / X2.size
