@@ -1,71 +1,66 @@
 """Implements ModelPoissonGibbs."""
 
+import collections as _clt
+
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.stats as _sts
 
 import eQTLseq.trans as _trans
-
-from eQTLseq.ModelNormalGibbs2 import ModelNormalGibbs2 as _ModelNormalGibbs2
+import eQTLseq.model_common as _cmn
 
 _EPS = _nmp.finfo('float').eps
 
 
-class ModelPoissonGibbs(_ModelNormalGibbs2):
+class ModelPoissonGibbs(object):
     """An overdispersed Poisson model estimated using Gibbs sampling."""
+    State = _clt.namedtuple('State', ('mu', 'tau', 'eta', 'zeta', 'beta', 'Y'))
 
     def __init__(self, **args):
         """TODO."""
-        super().__init__(**args)
-
-        Z = args['Z']
-        n_samples, n_genes = Z.shape
+        n_samples, n_genes = args['Z'].shape
+        _, n_markers = args['G'].shape
 
         # initial conditions
-        self.Y = _rnd.randn(n_samples, n_genes)
+        mu = _nmp.mean(_nmp.log(args['Z'] + 1), 0)
+        self.state = ModelPoissonGibbs.State(
+            mu=mu,
+            tau=_nmp.ones(n_genes),
+            eta=_nmp.ones(n_markers),
+            zeta=_nmp.ones((n_genes, n_markers)),
+            beta=_rnd.randn(n_genes, n_markers),
+            Y=mu + _rnd.randn(n_samples, n_genes)
+        )
 
-        self.mu = _nmp.mean(Z * _nmp.exp(-self.Y), 0)
-        self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
-        self.Y_sum, self.Y2_sum = _nmp.zeros((n_samples, n_genes)), _nmp.zeros((n_samples, n_genes))
+        self.sums = [_nmp.zeros_like(_) for _ in self.state]
+        self.sums2 = [_nmp.zeros_like(_) for _ in self.state]
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G = args['Z'], args['G']
+        Z, G, beta_thr, s2_lims = args['Z'], args['G'], args['beta_thr'], args['s2_lims']
+        st = self.state
 
-        # update beta, tau, zeta and eta
-        YTY = _nmp.sum(self.Y**2, 0)
-        GTY = G.T.dot(self.Y)
-        super().update(itr, **{**args, 'YTY': YTY, 'GTY': GTY})
-
-        # sample Y
-        self.Y = _sample_Y(Z, G, self.mu, self.Y, self.beta, self.tau)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
-
-        # sample mu
-        self.mu = _sample_mu(Z, self.Y)
+        # sample beta
+        idxs_genes, idxs_markers = _cmn.get_idxs_redux(st.beta, st.tau, st.zeta, st.eta, beta_thr, s2_lims)
+        st.beta[_nmp.ix_(idxs_genes, idxs_markers)] = \
+            _cmn.sample_beta(st.Y, G, st.mu, st.tau, st.zeta, st.eta, idxs_genes, idxs_markers)
+        st.mu[:] = _cmn.sample_mu(st.Y, G, st.beta, st.tau)
+        st.tau[:] = _cmn.sample_tau(st.Y, G, st.beta, st.mu, st.zeta, st.eta, s2_lims)
+        st.zeta[:, :] = _cmn.sample_zeta(st.beta, st.tau, st.eta, s2_lims)
+        st.eta[:] = _cmn.sample_eta(st.beta, st.tau, st.zeta, s2_lims)
+        st.Y[:, :] = _sample_Y(Z, G, st.Y, st.beta, st.mu, st.tau)
 
         if(itr > args['n_burnin']):
-            self.Y_sum += self.Y
-            self.Y2_sum += self.Y**2
-            self.mu_sum += self.mu
-            self.mu2_sum += self.mu**2
+            self.sums = [s + st for s, st in zip(self.sums, self.state)]
+            self.sums2 = [s2 + st**2 for s2, st in zip(self.sums2, self.state)]
 
     def get_estimates(self, **args):
         """TODO."""
-        n_iters, n_burnin = args['n_iters'], args['n_burnin']
+        return _cmn.get_estimates(self.state._fields, self.sums, self.sums2, args['n_iters'] - args['n_burnin'])
 
-        #
-        N = n_iters - n_burnin
-        mu_mean, Y_mean = self.mu_sum / N, self.Y_sum / N
-        mu_var, Y_var = self.mu2_sum / N - mu_mean**2, self.Y2_sum / N - Y_mean**2
-
-        extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
-
-        return {
-            'mu': mu_mean, 'mu_var': mu_var,
-            'Y': Y_mean.T, 'Y_var': Y_var.T,
-            **extra
-        }
+    def get_state(self, **args):
+        """TODO."""
+        return _nmp.sqrt((self.state.beta**2).sum())
 
     @staticmethod
     def get_RHO(Z, G, res):
@@ -73,9 +68,8 @@ class ModelPoissonGibbs(_ModelNormalGibbs2):
         beta = res['beta']
         mu = res['mu']
 
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        Zhat = mu * _nmp.exp(Yhat)
+        Yhat = mu + G.dot(beta.T)
+        Zhat = _nmp.exp(Yhat)
 
         ##
         return _sts.spearmanr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1)).correlation
@@ -86,9 +80,8 @@ class ModelPoissonGibbs(_ModelNormalGibbs2):
         beta = res['beta']
         mu = res['mu']
 
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        Zhat = mu * _nmp.exp(Yhat)
+        Yhat = mu + G.dot(beta.T)
+        Zhat = _nmp.exp(Yhat)
 
         ##
         return _sts.pearsonr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1))[0]
@@ -101,9 +94,8 @@ class ModelPoissonGibbs(_ModelNormalGibbs2):
         beta = res['beta']
         mu = res['mu']
 
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        Zhat = mu * _nmp.exp(Yhat)
+        Yhat = mu + G.dot(beta.T)
+        Zhat = _nmp.exp(Yhat)
 
         Z = _nmp.c_[Z, Zhat]
         Z = _trans.transform_data(Z.T, kind='blom').T
@@ -115,30 +107,13 @@ class ModelPoissonGibbs(_ModelNormalGibbs2):
         return nMSE.sum() / nMSE.size
 
     @staticmethod
-    def get_X2c(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        Zhat = mu * _nmp.exp(Yhat)
-        s2 = Zhat
-
-        X2 = (Z - Zhat)**2 / s2 + _nmp.log(s2)
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
     def get_X2p(Z, G, res):
         """TODO."""
         beta = res['beta']
         mu = res['mu']
 
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        Zhat = mu * _nmp.exp(Yhat)
+        Yhat = mu + G.dot(beta.T)
+        Zhat = _nmp.exp(Yhat)
         s2 = Zhat
 
         X2 = (Z - Zhat)**2 / s2
@@ -152,9 +127,8 @@ class ModelPoissonGibbs(_ModelNormalGibbs2):
         beta = res['beta']
         mu = res['mu']
 
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        Zhat = mu * _nmp.exp(Yhat)
+        Yhat = mu + G.dot(beta.T)
+        Zhat = _nmp.exp(Yhat)
 
         X2 = (Z - Zhat)**2 / Zhat
 
@@ -167,35 +141,26 @@ class ModelPoissonGibbs(_ModelNormalGibbs2):
         beta = res['beta']
         mu = res['mu']
 
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        means = mu * _nmp.exp(Yhat)
+        Yhat = mu + G.dot(beta.T)
+        means = _nmp.exp(Yhat)
 
         loglik = Z * _nmp.log(means + _EPS) - means
-        loglik0 = Z * _nmp.log(mu + _EPS) - mu
+        loglik0 = Z * mu - _nmp.exp(mu)
         diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
 
         ##
         return 1 - _nmp.exp(diff / diff.size)
 
 
-def _sample_mu(Z, Y):
-    n_samples, _ = Z.shape
-    Z = Z * _nmp.exp(-Y)
-    mu = _rnd.gamma(Z.sum(0), 1 / n_samples)
-
-    #
-    return mu
-
-
-def _sample_Y(Z, G, mu, Y, beta, tau):
+def _sample_Y(Z, G, Y, beta, mu, tau):
     n_samples, n_genes = Z.shape
+    Y = Y.copy()
 
     # sample proposals from a normal prior
-    means = mu * _nmp.exp(Y)
+    means = _nmp.exp(Y)
 
-    Y_ = _rnd.normal(G.dot(beta.T), 1 / _nmp.sqrt(tau))
-    means_ = mu * _nmp.exp(Y_)
+    Y_ = _rnd.normal(mu + G.dot(beta.T), 1 / _nmp.sqrt(tau))
+    means_ = _nmp.exp(Y_)
 
     # compute loglik
     loglik = Z * _nmp.log(means + _EPS) - means     # add a small number to avoid ...

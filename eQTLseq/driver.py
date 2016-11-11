@@ -18,7 +18,7 @@ _MODELS = {
 }
 
 
-def run(Z, G, model='Normal', scaleG=True, centreZ=True, n_iters=1000, burnin=0.5, beta_thr=1e-6, s2_lims=(1e-20, 1e3),
+def run(Z, G, model='Normal', scaleG=True, n_iters=1000, burnin=0.5, beta_thr=1e-6, s2_lims=(1e-20, 1e3),
         n_threads=1, progress=True):
     """Run an estimation algorithm for a specified number of iterations."""
     n_samples1, n_genes = Z.shape
@@ -32,32 +32,15 @@ def run(Z, G, model='Normal', scaleG=True, centreZ=True, n_iters=1000, burnin=0.
 
     # data
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0) if scaleG else G
-    GTG = G.T.dot(G)
-
-    if model == 'Normal':
-        Y = Z - _nmp.mean(Z, 0) if centreZ else Z
-        YTY = _nmp.sum(Y**2, 0)
-        GTY = G.T.dot(Y)
-    else:
-        Y = YTY = GTY = None
 
     # args
     args = {
-        'n_samples': n_samples1,
-        'n_markers': n_markers,
-        'n_genes': n_genes,
         'n_iters': n_iters,
         'n_burnin': round(n_iters * burnin),
         'beta_thr': beta_thr,
         's2_lims': s2_lims,
-        'scaleG': scaleG,
-        'centreZ': centreZ,
         'Z': Z,
-        'Y': Y,
-        'G': G,
-        'GTG': GTG,
-        'YTY': YTY,
-        'GTY': GTY
+        'G': G
     }
 
     # loop
@@ -76,18 +59,15 @@ def run(Z, G, model='Normal', scaleG=True, centreZ=True, n_iters=1000, burnin=0.
     }
 
 
-def get_metrics(Z, G, res, model='Normal', scaleG=True, centreZ=True):
+def get_metrics(Z, G, res, model='Normal', scaleG=True):
     """TODO."""
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0) if scaleG else G
-    if model == 'Normal':
-        Z = Z - _nmp.mean(Z, 0) if centreZ else Z
 
     ##
     return {
         'R2': _MODELS[model].get_R2(Z, G, res),
         'X2': _MODELS[model].get_X2(Z, G, res),
         'X2p': _MODELS[model].get_X2p(Z, G, res),
-        'X2c': _MODELS[model].get_X2c(Z, G, res),
         'nMSE': _MODELS[model].get_nMSE(Z, G, res),
         'PCC': _MODELS[model].get_PCC(Z, G, res),
         'RHO': _MODELS[model].get_RHO(Z, G, res)

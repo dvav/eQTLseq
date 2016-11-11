@@ -1,71 +1,67 @@
 """Implements ModelBinomGibbs."""
 
+import collections as _clt
+
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.stats as _sts
 
 import eQTLseq.trans as _trans
-
-from eQTLseq.ModelNormalGibbs2 import ModelNormalGibbs2 as _ModelNormalGibbs2
+import eQTLseq.model_common as _cmn
 
 _EPS = _nmp.finfo('float').eps
 
 
-class ModelBinomGibbs(_ModelNormalGibbs2):
+class ModelBinomGibbs(object):
     """An overdispersed Binomial model estimated using Gibbs sampling."""
+    State = _clt.namedtuple('State', ('mu', 'tau', 'eta', 'zeta', 'beta', 'Y'))
 
     def __init__(self, **args):
         """TODO."""
-        super().__init__(**args)
-
-        Z = args['Z']
-        n_samples, n_genes = Z.shape
+        n_samples, n_genes = args['Z'].shape
+        _, n_markers = args['G'].shape
 
         # initial conditions
-        self.Y = _rnd.randn(n_samples, n_genes)
+        p = args['Z'] / args['Z'].sum(1)[:, None]
+        phat = p.sum(0) / n_samples
+        mu = _nmp.log(phat) - _nmp.log1p(-phat)
+        self.state = ModelBinomGibbs.State(
+            mu=mu,
+            tau=_nmp.ones(n_genes),
+            eta=_nmp.ones(n_markers),
+            zeta=_nmp.ones((n_genes, n_markers)),
+            beta=_rnd.randn(n_genes, n_markers),
+            Y=mu + _rnd.randn(n_samples, n_genes)
+        )
 
-        self.mu = _nmp.mean(Z * _nmp.exp(-self.Y), 0)
-        self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
-        self.Y_sum, self.Y2_sum = _nmp.zeros((n_samples, n_genes)), _nmp.zeros((n_samples, n_genes))
+        self.sums = [_nmp.zeros_like(_) for _ in self.state]
+        self.sums2 = [_nmp.zeros_like(_) for _ in self.state]
 
     def update(self, itr, **args):
         """TODO."""
-        Z, G = args['Z'], args['G']
+        Z, G, beta_thr, s2_lims = args['Z'], args['G'], args['beta_thr'], args['s2_lims']
+        st = self.state
 
-        # update beta, tau, zeta and eta
-        YTY = _nmp.sum(self.Y**2, 0)
-        GTY = G.T.dot(self.Y)
-        super().update(itr, **{**args, 'YTY': YTY, 'GTY': GTY})
-
-        # sample Y
-        self.Y = _sample_Y(Z, G, self.mu, self.Y, self.beta, self.tau)
-        self.Y = self.Y - _nmp.mean(self.Y, 0)
-
-        # sample mu
-        self.mu = _sample_mu(Z, self.Y)
+        idxs_genes, idxs_markers = _cmn.get_idxs_redux(st.beta, st.tau, st.zeta, st.eta, beta_thr, s2_lims)
+        st.beta[_nmp.ix_(idxs_genes, idxs_markers)] = \
+            _cmn.sample_beta(st.Y, G, st.mu, st.tau, st.zeta, st.eta, idxs_genes, idxs_markers)
+        st.mu[:] = _cmn.sample_mu(st.Y, G, st.beta, st.tau)
+        st.tau[:] = _cmn.sample_tau(st.Y, G, st.beta, st.mu, st.zeta, st.eta, s2_lims)
+        st.zeta[:, :] = _cmn.sample_zeta(st.beta, st.tau, st.eta, s2_lims)
+        st.eta[:] = _cmn.sample_eta(st.beta, st.tau, st.zeta, s2_lims)
+        st.Y[:, :] = _sample_Y(Z, G, st.Y, st.beta, st.mu, st.tau)
 
         if(itr > args['n_burnin']):
-            self.Y_sum += self.Y
-            self.Y2_sum += self.Y**2
-            self.mu_sum += self.mu
-            self.mu2_sum += self.mu**2
+            self.sums = [s + st for s, st in zip(self.sums, self.state)]
+            self.sums2 = [s2 + st**2 for s2, st in zip(self.sums2, self.state)]
 
     def get_estimates(self, **args):
         """TODO."""
-        n_iters, n_burnin = args['n_iters'], args['n_burnin']
+        return _cmn.get_estimates(self.state._fields, self.sums, self.sums2, args['n_iters'] - args['n_burnin'])
 
-        #
-        N = n_iters - n_burnin
-        mu_mean, Y_mean = self.mu_sum / N, self.Y_sum / N
-        mu_var, Y_var = self.mu2_sum / N - mu_mean**2, self.Y2_sum / N - Y_mean**2
-
-        extra = super().get_estimates(n_iters=n_iters, n_burnin=n_burnin)
-
-        return {
-            'mu': mu_mean, 'mu_var': mu_var,
-            'Y': Y_mean.T, 'Y_var': Y_var.T,
-            **extra
-        }
+    def get_state(self, **args):
+        """TODO."""
+        return _nmp.sqrt((self.state.beta**2).sum())
 
     @staticmethod
     def get_RHO(Z, G, res):
@@ -74,9 +70,8 @@ class ModelBinomGibbs(_ModelNormalGibbs2):
         mu = res['mu']
 
         N = Z.sum(1)
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        pi = mu / (mu + _nmp.exp(-Yhat))
+        Yhat = mu + G.dot(beta.T)
+        pi = 1 / (1 + _nmp.exp(-Yhat))
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
         Zhat = N[:, None] * pi
 
@@ -90,9 +85,8 @@ class ModelBinomGibbs(_ModelNormalGibbs2):
         mu = res['mu']
 
         N = Z.sum(1)
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        pi = mu / (mu + _nmp.exp(-Yhat))
+        Yhat = mu + G.dot(beta.T)
+        pi = 1 / (1 + _nmp.exp(-Yhat))
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
         Zhat = N[:, None] * pi
 
@@ -108,9 +102,8 @@ class ModelBinomGibbs(_ModelNormalGibbs2):
         mu = res['mu']
 
         N = Z.sum(1)
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        pi = mu / (mu + _nmp.exp(-Yhat))
+        Yhat = mu + G.dot(beta.T)
+        pi = 1 / (1 + _nmp.exp(-Yhat))
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
         Zhat = N[:, None] * pi
 
@@ -124,34 +117,14 @@ class ModelBinomGibbs(_ModelNormalGibbs2):
         return nMSE.sum() / nMSE.size
 
     @staticmethod
-    def get_X2c(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        N = Z.sum(1)
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        pi = mu / (mu + _nmp.exp(-Yhat))
-        pi = _nmp.clip(pi, _EPS, 1 - _EPS)
-        Zhat = N[:, None] * pi
-        s2 = Zhat * (1 - pi)
-
-        X2 = (Z - Zhat)**2 / s2 + _nmp.log(s2)
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
     def get_X2p(Z, G, res):
         """TODO."""
         beta = res['beta']
         mu = res['mu']
 
         N = Z.sum(1)
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        pi = mu / (mu + _nmp.exp(-Yhat))
+        Yhat = mu + G.dot(beta.T)
+        pi = 1 / (1 + _nmp.exp(-Yhat))
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
         Zhat = N[:, None] * pi
         s2 = Zhat * (1 - pi)
@@ -168,9 +141,8 @@ class ModelBinomGibbs(_ModelNormalGibbs2):
         mu = res['mu']
 
         N = Z.sum(1)
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        pi = mu / (mu + _nmp.exp(-Yhat))
+        Yhat = mu + G.dot(beta.T)
+        pi = 1 / (1 + _nmp.exp(-Yhat))
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
         Zhat = N[:, None] * pi
 
@@ -186,10 +158,9 @@ class ModelBinomGibbs(_ModelNormalGibbs2):
         mu = res['mu']
 
         N = Z.sum(1)
-        Yhat = G.dot(beta.T)
-        Yhat = Yhat - _nmp.mean(Yhat, 0)
-        pi = mu / (mu + _nmp.exp(-Yhat))
-        pi0 = mu / (mu + 1)
+        Yhat = mu + G.dot(beta.T)
+        pi = 1 / (1 + _nmp.exp(-Yhat))
+        pi0 = 1 / (1 + _nmp.exp(-mu))
 
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
         pi0 = _nmp.clip(pi0, _EPS, 1 - _EPS)
@@ -202,29 +173,16 @@ class ModelBinomGibbs(_ModelNormalGibbs2):
         return 1 - _nmp.exp(diff / diff.size)
 
 
-def _sample_mu(Z, Y, a0=0.5, b0=0.5):
-    Z = Z * _nmp.exp(-Y)
-    n = Z.sum(1)
-    s = Z.sum(0)
-
-    a = a0 + s
-    b = b0 + (n[:, None] - Z).sum(0)
-    pi = _rnd.beta(a, b)
-    mu = pi / (1 - pi)
-
-    #
-    return mu
-
-
-def _sample_Y(Z, G, mu, Y, beta, tau):
+def _sample_Y(Z, G, Y, beta, mu, tau):
     n_samples, n_genes = Z.shape
+    Y = Y.copy()
     N = Z.sum(1)
 
     # sample proposals from a normal prior
-    pi = mu / (mu + _nmp.exp(-Y))
+    pi = 1 / (1 + _nmp.exp(-Y))
 
-    Y_ = _rnd.normal(G.dot(beta.T), 1 / _nmp.sqrt(tau))
-    pi_ = mu / (mu + _nmp.exp(-Y_))
+    Y_ = _rnd.normal(mu + G.dot(beta.T), 1 / _nmp.sqrt(tau))
+    pi_ = 1 / (1 + _nmp.exp(-Y_))
 
     pi = _nmp.clip(pi, _EPS, 1 - _EPS)    # bound pi/pi_ between (0,1) to avoid ...
     pi_ = _nmp.clip(pi_, _EPS, 1 - _EPS)   # divide-by-zero errors

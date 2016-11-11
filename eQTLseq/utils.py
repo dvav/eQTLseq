@@ -73,25 +73,6 @@ def sample_nbinom(mu, phi, size=None):
     return counts
 
 
-def sample_PG(a, b, K=10):
-    """TODO."""
-    assert a.shape == b.shape
-    pi = _nmp.pi
-
-    k = _nmp.r_[1:K+1][:, None, None]
-    denom = (k - 0.5)**2 + 0.25 * (b / pi)**2
-
-    g = _rnd.gamma(a, 1, size=(K,) + a.shape)
-    x = 0.5 / pi**2 * (g / denom).sum(0)
-
-    c1 = 0.5 * a / b * _nmp.tanh(0.5 * b)
-    c2 = 0.5 / pi**2 * (a / denom).sum(0)
-    x = c1 / c2 * x
-
-    # return
-    return x
-
-
 def calculate_metrics(beta, beta_true, beta_thr=1e-6):
     """Calculate errors between estimated and true matrices of coefficients."""
     beta[_nmp.abs(beta) < beta_thr] = 0

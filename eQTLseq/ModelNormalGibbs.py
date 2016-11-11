@@ -1,241 +1,130 @@
 """Implements ModelNormalGibbs."""
 
+import collections as _clt
+
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.stats as _sts
 
-import eQTLseq.utils as _utils
 import eQTLseq.trans as _trans
+import eQTLseq.model_common as _cmn
 
 _EPS = _nmp.finfo('float').eps
 
 
 class ModelNormalGibbs(object):
     """A normal model estimated using Gibbs sampling."""
+    State = _clt.namedtuple('State', ('mu', 'tau', 'eta', 'zeta', 'beta'))
 
     def __init__(self, **args):
         """TODO."""
-        n_genes, n_markers = args['n_genes'], args['n_markers']
+        _, n_genes = args['Z'].shape
+        _, n_markers = args['G'].shape
 
         # initial conditions
-        self.mu = _nmp.mean(args['Y'], 0)
-        self.tau = _nmp.ones(n_genes)
-        self.eta = _nmp.ones(n_markers)
-        self.zeta = _nmp.ones((n_genes, n_markers))
-        self.beta = _rnd.randn(n_genes, n_markers)
+        self.state = ModelNormalGibbs.State(
+            mu=_nmp.mean(args['Z'], 0),
+            tau=_nmp.ones(n_genes),
+            eta=_nmp.ones(n_markers),
+            zeta=_nmp.ones((n_genes, n_markers)),
+            beta=_rnd.randn(n_genes, n_markers)
+        )
 
-        self.mu_sum, self.mu2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
-        self.tau_sum, self.tau2_sum = _nmp.zeros(n_genes), _nmp.zeros(n_genes)
-        self.zeta_sum, self.zeta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
-        self.eta_sum, self.eta2_sum = _nmp.zeros(n_markers), _nmp.zeros(n_markers)
-        self.beta_sum, self.beta2_sum = _nmp.zeros((n_genes, n_markers)), _nmp.zeros((n_genes, n_markers))
+        self.sums = [_nmp.zeros_like(_) for _ in self.state]
+        self.sums2 = [_nmp.zeros_like(_) for _ in self.state]
 
     def update(self, itr, **args):
         """TODO."""
-        Y, G, YTY, GTG, GTY = args['Y'], args['G'], args['YTY'], args['GTG'], args['GTY']
-        beta_thr, s2_lims, n_samples = args['beta_thr'], args['s2_lims'], args['n_samples']
+        Z, G, beta_thr, s2_lims = args['Z'], args['G'], args['beta_thr'], args['s2_lims']
+        st = self.state
 
-        # sample beta and tau
-        self.beta, self.tau = _sample_beta_tau(Y, G, YTY, GTG, GTY, self.beta, self.tau, self.zeta, self.eta, n_samples,
-                                               beta_thr, s2_lims)
-
-        # sample eta and zeta
-        self.zeta = _sample_zeta(self.beta, self.tau, self.eta)
-        self.zeta = _nmp.clip(self.zeta, 1 / s2_lims[1], 1 / s2_lims[0])
-
-        self.eta = _sample_eta(self.beta, self.tau, self.zeta)
-        self.eta = _nmp.clip(self.eta, 1 / s2_lims[1], 1 / s2_lims[0])
+        # sample beta
+        idxs_genes, idxs_markers = _cmn.get_idxs_redux(st.beta, st.tau, st.zeta, st.eta, beta_thr, s2_lims)
+        st.beta[_nmp.ix_(idxs_genes, idxs_markers)] = \
+            _cmn.sample_beta(Z, G, st.mu, st.tau, st.zeta, st.eta, idxs_genes, idxs_markers)
+        st.mu[:] = _cmn.sample_mu(Z, G, st.beta, st.tau)
+        st.tau[:] = _cmn.sample_tau(Z, G, st.beta, st.mu, st.zeta, st.eta, s2_lims)
+        st.zeta[:, :] = _cmn.sample_zeta(st.beta, st.tau, st.eta, s2_lims)
+        st.eta[:] = _cmn.sample_eta(st.beta, st.tau, st.zeta, s2_lims)
 
         if(itr > args['n_burnin']):
-            self.mu_sum += self.mu
-            self.tau_sum += self.tau
-            self.zeta_sum += self.zeta
-            self.eta_sum += self.eta
-            self.beta_sum += self.beta
-
-            self.mu2_sum += self.mu**2
-            self.tau2_sum += self.tau**2
-            self.zeta2_sum += self.zeta**2
-            self.eta2_sum += self.eta**2
-            self.beta2_sum += self.beta**2
+            self.sums = [s + st for s, st in zip(self.sums, self.state)]
+            self.sums2 = [s2 + st**2 for s2, st in zip(self.sums2, self.state)]
 
     def get_estimates(self, **args):
         """TODO."""
-        N = args['n_iters'] - args['n_burnin']
-        mu_mean, tau_mean, zeta_mean, eta_mean, beta_mean = self.mu_sum / N, self.tau_sum / N, self.zeta_sum / N, \
-            self.eta_sum / N, self.beta_sum / N
-        mu_var, tau_var, zeta_var, eta_var, beta_var = self.mu2_sum / N - mu_mean**2, self.tau2_sum / N - tau_mean**2, \
-            self.zeta2_sum / N - zeta_mean**2, self.eta2_sum / N - eta_mean**2, self.beta2_sum / N - beta_mean**2
-
-        return {
-            'mu': mu_mean, 'mu_var': mu_var,
-            'tau': tau_mean, 'tau_var': tau_var,
-            'zeta': zeta_mean, 'zeta_var': zeta_var,
-            'eta': eta_mean, 'eta_var': eta_var,
-            'beta': beta_mean, 'beta_var': beta_var
-        }
+        return _cmn.get_estimates(self.state._fields, self.sums, self.sums2, args['n_iters'] - args['n_burnin'])
 
     def get_state(self, **args):
         """TODO."""
-        return _nmp.sqrt((self.beta**2).sum())
+        return _nmp.sqrt((self.state.beta**2).sum())
 
     @staticmethod
-    def get_RHO(Y, G, res):
+    def get_RHO(Z, G, res):
         """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
+        beta, mu = res['beta'], res['mu']
+        Zhat = mu + G.dot(beta.T)
 
         ##
-        return _sts.spearmanr(Y.ravel(), Yhat.ravel()).correlation
+        return _sts.spearmanr(Z.ravel(), Zhat.ravel()).correlation
 
     @staticmethod
-    def get_PCC(Y, G, res):
+    def get_PCC(Z, G, res):
         """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
+        beta, mu = res['beta'], res['mu']
+        Zhat = mu + G.dot(beta.T)
 
         ##
-        return _sts.pearsonr(Y.ravel(), Yhat.ravel())[0]
+        return _sts.pearsonr(Z.ravel(), Zhat.ravel())[0]
 
     @staticmethod
-    def get_nMSE(Y, G, res):
+    def get_nMSE(Z, G, res):
         """TODO."""
-        _, n_genes = Y.shape
+        _, n_genes = Z.shape
 
-        beta = res['beta']
-        Yhat = G.dot(beta.T)
+        beta, mu = res['beta'], res['mu']
+        Zhat = mu + G.dot(beta.T)
 
-        Y = _nmp.c_[Y, Yhat]
-        Y = _trans.transform_data(Y.T, kind='blom').T
-        Y, Yhat = Y[:, :n_genes], Y[:, n_genes:]
+        Z = _nmp.c_[Z, Zhat]
+        Z = _trans.transform_data(Z.T, kind='blom').T
+        Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
 
-        nMSE = (Y - Yhat)**2
+        nMSE = (Z - Zhat)**2
 
         ##
         return nMSE.sum() / nMSE.size
 
     @staticmethod
-    def get_X2c(Y, G, res):
+    def get_X2p(Z, G, res):
         """TODO."""
-        beta = res['beta']
-        tau = res['tau']
+        beta, mu, tau = res['beta'], res['mu'], res['tau']
+        Zhat = mu + G.dot(beta.T)
 
-        Yhat = G.dot(beta.T)
-
-        X2 = (Y - Yhat)**2 * tau - _nmp.log(tau)
+        X2 = (Z - Zhat)**2 * tau
 
         ##
         return X2.sum() / X2.size
 
     @staticmethod
-    def get_X2p(Y, G, res):
+    def get_X2(Z, G, res):
         """TODO."""
-        beta = res['beta']
-        tau = res['tau']
+        beta, mu = res['beta'], res['mu']
+        Zhat = mu + G.dot(beta.T)
 
-        Yhat = G.dot(beta.T)
-
-        X2 = (Y - Yhat)**2 * tau
+        X2 = (Z - Zhat)**2 / _nmp.abs(Zhat)
 
         ##
         return X2.sum() / X2.size
 
     @staticmethod
-    def get_X2(Y, G, res):
+    def get_R2(Z, G, res):
         """TODO."""
-        beta = res['beta']
-        Yhat = G.dot(beta.T)
+        beta, mu, tau = res['beta'], res['mu'], res['tau']
+        Zhat = mu + G.dot(beta.T)
 
-        X2 = (Y - Yhat)**2 / _nmp.abs(Yhat)
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_R2(Y, G, res):
-        """TODO."""
-        beta = res['beta']
-        tau = res['tau']
-
-        Yhat = G.dot(beta.T)
-
-        loglik = - 0.5 * (Y - Yhat)**2 * tau
-        loglik0 = - 0.5 * Y**2 * tau
+        loglik = - 0.5 * (Z - Zhat)**2 * tau
+        loglik0 = - 0.5 * Z**2 * tau
         diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
 
         ##
         return 1 - _nmp.exp(diff / diff.size)
-
-
-def _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims):
-    """TODO."""
-    _, n_markers = zeta.shape
-
-    # sample tau
-    shape = 0.5 * (n_samples + n_markers)
-    rate = 0.5 * YTY
-    tau = _rnd.gamma(shape, 1 / rate)
-    tau = _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
-
-    # sample beta
-    theta = zeta * eta
-    A = tau[:, None, None] * (GTG + theta[:, :, None] * _nmp.identity(n_markers))
-    b = tau * GTY
-    beta = _utils.sample_multivariate_normal_many(b.T, A)
-
-    ##
-    return beta, tau
-
-
-def _sample_beta_tau(Y, G, YTY, GTG, GTY, beta, tau, zeta, eta, n_samples, beta_thr, s2_lims):
-    """TODO."""
-    # identify irrelevant genes and markers and exclude them
-    idxs = (_nmp.abs(beta) > beta_thr) & (tau[:, None] * zeta * eta < 1 / s2_lims[0])
-    idxs[[0, 1], [0, 1]] = True  # just a precaution
-    idxs_markers = _nmp.any(idxs, 0)
-    idxs_genes = _nmp.any(idxs, 1)
-
-    YTY = YTY[idxs_genes]
-    GTG = GTG[:, idxs_markers][idxs_markers, :]
-    GTY = GTY[idxs_markers, :][:, idxs_genes]
-
-    zeta = zeta[idxs_genes, :][:, idxs_markers]
-    eta = eta[idxs_markers]
-
-    beta[_nmp.ix_(idxs_genes, idxs_markers)], tau[idxs_genes] = \
-        _sample_beta_tau_(YTY, GTG, GTY, zeta, eta, n_samples, s2_lims)
-
-    mean = _nmp.sum(Y - G.dot(beta.T), 0) / n_samples
-    prec = n_samples * tau
-    mu = _rnd.normal(mean, 1 / _nmp.sqrt(prec))
-
-    ##
-    return beta, tau
-
-
-def _sample_zeta(beta, tau, eta):
-    """TODO."""
-    # sample zeta
-    shape = 0.5
-    rate = 0.5 * eta * beta**2 * tau[:, None]
-    zeta = shape / rate  # _rnd.gamma(shape, 1 / rate)
-
-    ##
-    return zeta
-
-
-def _sample_eta(beta, tau, zeta):
-    """TODO."""
-    n_genes, _ = zeta.shape
-
-    # sample zeta
-    shape = 0.5 * n_genes
-    rate = 0.5 * (zeta * beta**2 * tau[:, None]).sum(0)
-    eta = _rnd.gamma(shape, 1 / rate)
-
-    ##
-    return eta
