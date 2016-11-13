@@ -29,6 +29,7 @@ def run(Z, G, model='Normal', scaleG=True, n_iters=1000, burnin=0.5, beta_thr=1e
     assert n_iters > 0
     assert 0.5 <= burnin < 1
     assert 0 < beta_thr <= 1e-6
+    assert s2_lims[0] > 0 and s2_lims[1] > 0 and s2_lims[0] < s2_lims[1]
 
     # data
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0) if scaleG else G
@@ -64,11 +65,4 @@ def get_metrics(Z, G, res, model='Normal', scaleG=True):
     G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0) if scaleG else G
 
     ##
-    return {
-        'R2': _MODELS[model].get_R2(Z, G, res),
-        'X2': _MODELS[model].get_X2(Z, G, res),
-        'X2p': _MODELS[model].get_X2p(Z, G, res),
-        'nMSE': _MODELS[model].get_nMSE(Z, G, res),
-        'PCC': _MODELS[model].get_PCC(Z, G, res),
-        'RHO': _MODELS[model].get_RHO(Z, G, res)
-    }
+    return _MODELS[model].get_metrics(Z, G, res)

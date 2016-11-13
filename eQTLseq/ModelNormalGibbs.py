@@ -4,10 +4,9 @@ import collections as _clt
 
 import numpy as _nmp
 import numpy.random as _rnd
-import scipy.stats as _sts
 
-import eQTLseq.trans as _trans
-import eQTLseq.model_common as _cmn
+import eQTLseq.utils as _utils
+import eQTLseq.common as _cmn
 
 _EPS = _nmp.finfo('float').eps
 
@@ -60,71 +59,29 @@ class ModelNormalGibbs(object):
         return _nmp.sqrt((self.state.beta**2).sum())
 
     @staticmethod
-    def get_RHO(Z, G, res):
-        """TODO."""
-        beta, mu = res['beta'], res['mu']
-        Zhat = mu + G.dot(beta.T)
-
-        ##
-        return _sts.spearmanr(Z.ravel(), Zhat.ravel()).correlation
-
-    @staticmethod
-    def get_PCC(Z, G, res):
-        """TODO."""
-        beta, mu = res['beta'], res['mu']
-        Zhat = mu + G.dot(beta.T)
-
-        ##
-        return _sts.pearsonr(Z.ravel(), Zhat.ravel())[0]
-
-    @staticmethod
-    def get_nMSE(Z, G, res):
+    def get_metrics(Z, G, res):
         """TODO."""
         _, n_genes = Z.shape
-
-        beta, mu = res['beta'], res['mu']
-        Zhat = mu + G.dot(beta.T)
-
-        Z = _nmp.c_[Z, Zhat]
-        Z = _trans.transform_data(Z.T, kind='blom').T
-        Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
-
-        nMSE = (Z - Zhat)**2
-
-        ##
-        return nMSE.sum() / nMSE.size
-
-    @staticmethod
-    def get_X2p(Z, G, res):
-        """TODO."""
         beta, mu, tau = res['beta'], res['mu'], res['tau']
+
+        # various calcs
         Zhat = mu + G.dot(beta.T)
 
-        X2 = (Z - Zhat)**2 * tau
+        C = - 0.5 * _nmp.log(tau) - 0.5 * _nmp.log(2 * _nmp.pi)
+        loglik = -0.5 * (Z - Zhat)**2 * tau + C
+        loglikF = C
+        loglik0 = -0.5 * (Z - mu)**2 * tau + C
+
+        # metrics
+        CCC = _utils.compute_ccc(Z, Zhat)
+        R2 = 1 - loglik.sum() / loglik0.sum()
+        NRMSD = _nmp.sqrt(_nmp.sum((Z - Zhat)**2) / Z.size) / (_nmp.max(Z) - _nmp.min(Z))
+        DEV = _nmp.sum(- 2 * (loglik - loglikF)) / Z.size
 
         ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_X2(Z, G, res):
-        """TODO."""
-        beta, mu = res['beta'], res['mu']
-        Zhat = mu + G.dot(beta.T)
-
-        X2 = (Z - Zhat)**2 / _nmp.abs(Zhat)
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_R2(Z, G, res):
-        """TODO."""
-        beta, mu, tau = res['beta'], res['mu'], res['tau']
-        Zhat = mu + G.dot(beta.T)
-
-        loglik = - 0.5 * (Z - Zhat)**2 * tau
-        loglik0 = - 0.5 * Z**2 * tau
-        diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
-
-        ##
-        return 1 - _nmp.exp(diff / diff.size)
+        return {
+            'CCC': CCC,
+            'NRMSD': NRMSD,
+            'R2': R2,
+            'DEV': DEV
+        }

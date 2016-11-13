@@ -5,11 +5,9 @@ import collections as _clt
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.special as _spc
-import scipy.stats as _sts
 
 import eQTLseq.utils as _utils
-import eQTLseq.trans as _trans
-import eQTLseq.model_common as _cmn
+import eQTLseq.common as _cmn
 
 _EPS = _nmp.finfo('float').eps
 
@@ -67,109 +65,42 @@ class ModelNBinomGibbs(object):
         return _nmp.sqrt((self.state.beta**2).sum())
 
     @staticmethod
-    def get_RHO(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Zhat = mu * _nmp.exp(G.dot(beta.T))
-
-        ##
-        return _sts.spearmanr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1)).correlation
-
-    @staticmethod
-    def get_PCC(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Zhat = mu * _nmp.exp(G.dot(beta.T))
-
-        ##
-        return _sts.pearsonr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1))[0]
-
-    @staticmethod
-    def get_nMSE(Z, G, res):
+    def get_metrics(Z, G, res):
         """TODO."""
         _, n_genes = Z.shape
+        beta, mu, phi = res['beta'], res['mu'], res['phi']
+        alpha = 1 / phi
 
-        beta = res['beta']
-        mu = res['mu']
-
+        # various calcs
         Zhat = mu * _nmp.exp(G.dot(beta.T))
 
-        Z = _nmp.c_[Z, Zhat]
-        Z = _trans.transform_data(Z.T, kind='blom').T
-        Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
-
-        nMSE = (Z - Zhat)**2
-
-        ##
-        return nMSE.sum() / nMSE.size
-
-    @staticmethod
-    def get_X2c(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-        phi = res['phi']
-
-        Zhat = mu * _nmp.exp(G.dot(beta.T))
-        s2 = Zhat + phi * Zhat**2
-
-        X2 = (Z - Zhat)**2 / s2 + _nmp.log(s2)
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_X2p(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-        phi = res['phi']
-
-        Zhat = mu * _nmp.exp(G.dot(beta.T))
-        s2 = Zhat + phi * Zhat**2
-
-        X2 = (Z - Zhat)**2 / s2
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_X2(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Zhat = mu * _nmp.exp(G.dot(beta.T))
-
-        X2 = (Z - Zhat)**2 / Zhat
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_R2(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-        alpha = 1 / res['phi']
-
-        means = mu * _nmp.exp(G.dot(beta.T))
-        pi = means / (alpha + means)
+        pi = Zhat / (alpha + Zhat)
+        piF = Z / (alpha + Z)
         pi0 = mu / (alpha + mu)
 
         pi = _nmp.clip(pi, _EPS, 1 - _EPS)
+        piF = _nmp.clip(piF, _EPS, 1 - _EPS)
         pi0 = _nmp.clip(pi0, _EPS, 1 - _EPS)
 
-        loglik = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi)
-        loglik0 = alpha * _nmp.log1p(-pi0) + Z * _nmp.log(pi0)
-        diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
+        C = _spc.gammaln(Z + alpha) - _spc.gammaln(alpha) - _spc.gammaln(Z + 1)
+        loglik = alpha * _nmp.log1p(-pi) + Z * _nmp.log(pi) + C
+        loglikF = alpha * _nmp.log1p(-piF) + Z * _nmp.log(piF) + C
+        loglik0 = alpha * _nmp.log1p(-pi0) + Z * _nmp.log(pi0) + C
+
+        # metrics
+        lZ, lZhat = _nmp.log(Z + 1), _nmp.log(Zhat + 1)
+        CCC = _utils.compute_ccc(lZ, lZhat)
+        R2 = 1 - loglik.sum() / loglik0.sum()
+        NRMSD = _nmp.sqrt(_nmp.sum((lZ - lZhat)**2) / Z.size) / (_nmp.max(lZ) - _nmp.min(lZ))
+        DEV = _nmp.sum(- 2 * (loglik - loglikF)) / Z.size
 
         ##
-        return 1 - _nmp.exp(diff / diff.size)
+        return {
+            'CCC': CCC,
+            'NRMSD': NRMSD,
+            'R2': R2,
+            'DEV': DEV
+        }
 
 
 def _sample_phi(Z, G, mu, phi, beta, phi_pars):
@@ -255,7 +186,7 @@ def _sample_beta(Z, G, mu, phi, beta, tau, zeta, eta, idxs_genes, idxs_markers):
     alpha = 1 / phi
     x0 = _nmp.log(mu) - _nmp.log(alpha)
 
-    omega = _sample_PG(Z + alpha, x0 + G.dot(beta.T))
+    omega = _utils.sample_PG(Z + alpha, x0 + G.dot(beta.T))
 
     theta = tau[:, None] * zeta * eta
     A1 = _nmp.dot(omega.T[:, None, :] * G.T, G)
@@ -264,7 +195,7 @@ def _sample_beta(Z, G, mu, phi, beta, tau, zeta, eta, idxs_genes, idxs_markers):
     b = 0.5 * G.T.dot(Z - alpha - 2 * omega * x0)
     beta = _utils.sample_multivariate_normal_many(b.T, A)
 
-    #
+    ##
     return beta
 
 
@@ -279,22 +210,3 @@ def _sample_tau(beta, zeta, eta, s2_lims):
 
     ##
     return _nmp.clip(tau, 1 / s2_lims[1], 1 / s2_lims[0])
-
-
-def _sample_PG(a, b, K=10):
-    """TODO."""
-    assert a.shape == b.shape
-    pi = _nmp.pi
-
-    k = _nmp.r_[1:K+1][:, None, None]
-    denom = (k - 0.5)**2 + 0.25 * (b / pi)**2
-
-    g = _rnd.gamma(a, 1, size=(K,) + a.shape)
-    x = 0.5 / pi**2 * (g / denom).sum(0)
-
-    c1 = 0.5 * a / b * _nmp.tanh(0.5 * b)
-    c2 = 0.5 / pi**2 * (a / denom).sum(0)
-    x = c1 / c2 * x
-
-    # return
-    return x

@@ -4,10 +4,10 @@ import collections as _clt
 
 import numpy as _nmp
 import numpy.random as _rnd
-import scipy.stats as _sts
+import scipy.special as _spc
 
-import eQTLseq.trans as _trans
-import eQTLseq.model_common as _cmn
+import eQTLseq.utils as _utils
+import eQTLseq.common as _cmn
 
 _EPS = _nmp.finfo('float').eps
 
@@ -63,93 +63,32 @@ class ModelPoissonGibbs(object):
         return _nmp.sqrt((self.state.beta**2).sum())
 
     @staticmethod
-    def get_RHO(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
-        Zhat = _nmp.exp(Yhat)
-
-        ##
-        return _sts.spearmanr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1)).correlation
-
-    @staticmethod
-    def get_PCC(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
-        Zhat = _nmp.exp(Yhat)
-
-        ##
-        return _sts.pearsonr(_nmp.log(Z.ravel() + 1), _nmp.log(Zhat.ravel() + 1))[0]
-
-    @staticmethod
-    def get_nMSE(Z, G, res):
+    def get_metrics(Z, G, res):
         """TODO."""
         _, n_genes = Z.shape
+        beta, mu = res['beta'], res['mu']
 
-        beta = res['beta']
-        mu = res['mu']
+        # various calcs
+        Zhat = _nmp.exp(mu + G.dot(beta.T))
 
-        Yhat = mu + G.dot(beta.T)
-        Zhat = _nmp.exp(Yhat)
+        loglik = Z * _nmp.log(Zhat + _EPS) - Zhat - _spc.gammaln(Z + 1)
+        loglikF = Z * _nmp.log(Z + _EPS) - Z - _spc.gammaln(Z + 1)
+        loglik0 = Z * mu - _nmp.exp(mu) - _spc.gammaln(Z + 1)
 
-        Z = _nmp.c_[Z, Zhat]
-        Z = _trans.transform_data(Z.T, kind='blom').T
-        Z, Zhat = Z[:, :n_genes], Z[:, n_genes:]
-
-        nMSE = (Z - Zhat)**2
-
-        ##
-        return nMSE.sum() / nMSE.size
-
-    @staticmethod
-    def get_X2p(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
-        Zhat = _nmp.exp(Yhat)
-        s2 = Zhat
-
-        X2 = (Z - Zhat)**2 / s2
+        # metrics
+        lZ, lZhat = _nmp.log(Z + 1), _nmp.log(Zhat + 1)
+        CCC = _utils.compute_ccc(lZ, lZhat)
+        R2 = 1 - loglik.sum() / loglik0.sum()
+        NRMSD = _nmp.sqrt(_nmp.sum((lZ - lZhat)**2) / Z.size) / (_nmp.max(lZ) - _nmp.min(lZ))
+        DEV = _nmp.sum(- 2 * (loglik - loglikF)) / Z.size
 
         ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_X2(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
-        Zhat = _nmp.exp(Yhat)
-
-        X2 = (Z - Zhat)**2 / Zhat
-
-        ##
-        return X2.sum() / X2.size
-
-    @staticmethod
-    def get_R2(Z, G, res):
-        """TODO."""
-        beta = res['beta']
-        mu = res['mu']
-
-        Yhat = mu + G.dot(beta.T)
-        means = _nmp.exp(Yhat)
-
-        loglik = Z * _nmp.log(means + _EPS) - means
-        loglik0 = Z * mu - _nmp.exp(mu)
-        diff = _nmp.min([loglik0.sum() - loglik.sum(), 0])
-
-        ##
-        return 1 - _nmp.exp(diff / diff.size)
+        return {
+            'CCC': CCC,
+            'NRMSD': NRMSD,
+            'R2': R2,
+            'DEV': DEV
+        }
 
 
 def _sample_Y(Z, G, Y, beta, mu, tau):
