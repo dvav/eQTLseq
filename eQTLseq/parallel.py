@@ -16,7 +16,7 @@ def init(n_threads):
         POOL = _mlp.Pool(processes=n_threads)
 
 
-def clean():
+def close():
     """TODO."""
     if POOL is not None:
         POOL.close()

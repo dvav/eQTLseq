@@ -3,6 +3,7 @@
 import numpy as _nmp
 import numpy.random as _rnd
 import scipy.linalg as _lin
+import scipy.stats as _sts
 
 from eQTLseq import parallel as _prl
 
@@ -10,7 +11,7 @@ _EPS = _nmp.finfo('float').eps
 
 
 def solve_chol_one(L, b):
-    """TODO."""
+    """Solve one triangular system."""
     x_ = _lin.solve_triangular(L, b, lower=True)  # L * x_ = b, where x_ = L.T * x
     x = _lin.solve_triangular(L.T, x_, lower=False)  # L.T * x = x_
 
@@ -19,7 +20,7 @@ def solve_chol_one(L, b):
 
 
 def solve_chol_many(A, b):
-    """TODO."""
+    """Solve many linear systems, using Cholesky."""
     L = _nmp.linalg.cholesky(A)
     x = [solve_chol_one(L_, b_) for L_, b_ in zip(L, b)]
 
@@ -28,7 +29,7 @@ def solve_chol_many(A, b):
 
 
 def sample_multivariate_normal_one(L, b, z):
-    """TODO."""
+    """Sample from a single multivariate normal distribution."""
     y = _lin.solve_triangular(L.T, z, lower=False)  # L.T * y = z
     mu_ = _lin.solve_triangular(L, b, lower=True)  # L * mu_ = b, where mu_ = L.T * mu
     mu = _lin.solve_triangular(L.T, mu_, lower=False)  # L.T * mu = mu_
@@ -74,7 +75,7 @@ def sample_nbinom(mu, phi, size=None):
 
 
 def sample_PG(a, b, K=10):
-    """TODO."""
+    """Sample from a Polya-Gamma distribution, as in Proc Int Conf Mach Learn. 2012; 2012: 1343–1350."""
     assert a.shape == b.shape
     pi = _nmp.pi
 
@@ -105,52 +106,77 @@ def compute_ccc(x, y):
     return 2 * sxy / (s2x + s2y + (x_hat - y_hat)**2)
 
 
-def calculate_metrics(beta, beta_true, beta_thr=1e-6):
+def calculate_metrics(beta, beta_true, beta_thr=1e-6, collapse='none'):
     """Calculate errors between estimated and true matrices of coefficients."""
-    beta[_nmp.abs(beta) < beta_thr] = 0
-    beta_true[_nmp.abs(beta_true) < beta_thr] = 0
-
-    # standardize
-    beta = beta if _nmp.all(beta == 0) else beta / _nmp.abs(beta).sum()
-    beta_true = beta_true if _nmp.all(beta_true == 0) else beta_true / _nmp.abs(beta_true).sum()
+    assert collapse in ('none', 'genes', 'variants')
 
     # matrix of hits
-    hits = _nmp.abs(_nmp.sign(beta))
-    hits_true = _nmp.abs(_nmp.sign(beta_true))
+    hits_2d = _nmp.abs(beta) > beta_thr * _nmp.max(_nmp.abs(beta))
+    hits_true_2d = _nmp.abs(beta_true) > beta_thr * _nmp.max(_nmp.abs(beta_true))
+
+    if collapse == 'genes':
+        hits = _nmp.any(hits_2d, 0)
+        hits_true = _nmp.any(hits_true_2d, 0)
+    elif collapse == 'variants':
+        hits = _nmp.any(hits_2d, 1)
+        hits_true = _nmp.any(hits_true_2d, 1)
+    else:
+        hits = hits_2d
+        hits_true = hits_true_2d
 
     # true and false positives/negatives
-    TP = _nmp.sum((hits == 1) & (hits_true == 1))
-    TN = _nmp.sum((hits == 0) & (hits_true == 0))
-    FP = _nmp.sum((hits == 1) & (hits_true == 0))
-    FN = _nmp.sum((hits == 0) & (hits_true == 1))
+    TP = _nmp.sum(hits & hits_true)
+    TN = _nmp.sum(~hits & ~hits_true)
+    FP = _nmp.sum(hits & ~hits_true)
+    FN = _nmp.sum(~hits & hits_true)
 
-    assert TP + TN + FP + FN == beta.size
+    assert TP + TN + FP + FN == hits.size
 
     # various metrics
     TPR = TP / (TP + FN + _EPS)  # true positive rate
     TNR = TN / (TN + FP + _EPS)  # true negative rate
     PPV = TP / (TP + FP + _EPS)  # positive predictive value
     NPV = TN / (TN + FN + _EPS)  # negative predictive value
-    FPR = FP / (FP + TN + _EPS)  # false positive rate
-    FDR = FP / (FP + TP + _EPS)  # false discovery rate
-    FNR = FN / (FN + TP + _EPS)  # false negative rate
+    FPR = 1 - TNR                # false positive rate
+    FDR = 1 - PPV                # false discovery rate
+    FNR = 1 - TPR                # false negative rate
 
     MCC = (TP * TN - FP * FN) / _nmp.sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN) + _EPS)  # Matthew's correlation coef.
-    ACC = (TP + TN) / (TP + FP + FN + TN + _EPS)  # accuracy
+    ACC = (TP + TN) / (TP + FP + FN + TN + _EPS)    # accuracy
     F1 = 2 * TPR * PPV / (TPR + PPV + _EPS)  # F1 score
     G = _nmp.sqrt(TPR * PPV)  # G score
+    BM = TPR + TNR - 1        # informedness
+    MK = PPV + NPV - 1        # markedness
 
-    # average standardised residual among true positives
-    idxs = (hits == 1) & (hits_true == 1)
-    RSS = _nmp.mean(((beta[idxs] - beta_true[idxs]) / beta_true[idxs])**2) if _nmp.any(idxs) else _nmp.nan
+    beta = beta / _nmp.abs(beta).sum()
+    beta_true = beta_true / _nmp.abs(beta_true).sum()
+
+    CCC = compute_ccc(beta, beta_true)
+    MSE = _nmp.mean((beta - beta_true) ** 2)
+    RMSE = _nmp.sqrt(MSE)
+    NRMSE = RMSE / (_nmp.std(beta_true) + _EPS)
+
+    beta_TP = beta[hits_2d & hits_true_2d]
+    beta_true_TP = beta_true[hits_2d & hits_true_2d]
+    CCC_TP = compute_ccc(beta_TP, beta_true_TP)
+    MSE_TP = _nmp.mean((beta_TP - beta_true_TP) ** 2)
+    RMSE_TP = _nmp.sqrt(MSE_TP)
+    NRMSE_TP = RMSE_TP / (_nmp.std(beta_true_TP) + _EPS)
 
     #
     return {
-        'RSS': RSS,
+        'CCC': CCC,
+        'RMSE': RMSE,
+        'NRMSE': NRMSE,
+        'CCC_TP': CCC_TP,
+        'RMSE_TP': RMSE_TP,
+        'NRMSE_TP': NRMSE_TP,
         'MCC': MCC,
         'ACC': ACC,
         'F1': F1,
         'G': G,
+        'BM': BM,
+        'MK': MK,
         'TPR': TPR,
         'TNR': TNR,
         'PPV': PPV,

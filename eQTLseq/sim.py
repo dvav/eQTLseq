@@ -1,4 +1,4 @@
-"""TODO."""
+"""Simulate genotypes and RNA-seq data."""
 
 import sys as _sys
 
@@ -81,13 +81,18 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S'
     # coefficients
     beta = _nmp.zeros((n_genes, n_markers))
 
+    # random gene/variant associations
+    if n_markers_hot > 0 and n_genes_hot == 0 and n_markers_poly == 0 and n_genes_poly == 0:
+        idxs = _rnd.choice(n_genes * n_markers, n_markers_hot, replace=False)
+        beta[_nmp.unravel_index(idxs, (n_genes, n_markers))] = 1 + _rnd.exponential(size=n_markers_hot)
+
     # hotspots
     if n_markers_hot > 0:
         hot_idxs_markers = _rnd.choice(n_markers, n_markers_hot, replace=False)
         hot_idxs_genes = _nmp.hstack([_rnd.choice(n_genes, (n_genes_hot, 1), replace=False) for _ in hot_idxs_markers])
         beta[hot_idxs_genes, hot_idxs_markers] = 1 + _rnd.exponential(size=(n_genes_hot, n_markers_hot))
 
-    # polymarker effects
+    # polygenic effects
     if n_genes_poly > 0:
         poly_idxs_genes = _rnd.choice(n_genes, (n_genes_poly, 1), replace=False)
         poly_idxs_markers = _nmp.vstack([_rnd.choice(n_markers, n_markers_poly, replace=False) for _ in poly_idxs_genes])
