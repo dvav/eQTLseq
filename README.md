@@ -22,7 +22,7 @@ Details of all statistical methods are given in the following paper:
 "*Hierarchical probabilistic models for multiple gene/variant associations based on
 NGS data*" by Dimitrios V. Vavoulis, Jenny C. Taylor & Anna Schuh, **2017** (submitted)
 
-For further information, please send a message at <Dimitris.Vavoulis@ndcls.ox.ac.uk>.
+For further information, please send a message to <Dimitris.Vavoulis@ndcls.ox.ac.uk>.
 
 Below, you can find instructions for installing and using the software. Enjoy!
 
