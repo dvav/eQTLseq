@@ -51,7 +51,7 @@ import numpy.random as rnd
 import matplotlib.pyplot as plt
 
 ## load data
-with open('/path/to/simdata_1_8_0_0.pkl', 'rb') as fh:
+with open('/path/to/simdata_1_4_0_0.pkl', 'rb') as fh:
   data = pkl.load(fh)
 
 Z = data['Z']     # simulated expression data
