@@ -4,7 +4,6 @@ from eQTLseq.driver import run
 from eQTLseq.driver import get_metrics
 
 from eQTLseq.utils import calculate_metrics
-from eQTLseq.utils import get_pvalues
 
 from eQTLseq.sim import fit_nbinom_model
 from eQTLseq.sim import simulate_eQTLs
