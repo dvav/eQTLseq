@@ -77,7 +77,7 @@ plt.ylabel('genes');
 ![The matrix of regression coefficients B](figs/fig1.png)
 
 From the above visualization of *B*, you can see that a single variant influences
-the expression of four genes. This is a known as a *hotspot*.
+the expression of four genes. This is known as a *hotspot*.
 
 In order to process the above data, we proceed as follows:
 
@@ -102,7 +102,7 @@ a single thread (`n_threads=1`). The normalization factors
 (`calculate_norm_factors`) are computed using the *relative log expression* (RLE)
 method, which is also used by *DESeq*. Other options for parameter `kind` in function
 `transform_data` are `logit`, `arcsin`, `blom` and `boxcox`. Transforming the data
-is necessary, if `model=Normal`. Other option for `model` are `Poisson`, `Binomial`
+is necessary, if `model=Normal`. Other options for `model` are `Poisson`, `Binomial`
 and `NBinomial`, in which case data transformation is not necessary.
 
 After the sampler finishes, we can visualize the results as shown below:
@@ -122,8 +122,7 @@ plt.plot(res['state'][1:]); plt.xlabel('iteration'); plt.ylabel('state')
 plt.subplot(2,1,2);
 plt.vlines(range(Bnorm.size), 0, Bnorm.ravel());
 plt.axhline(linestyle='--', color='k');
-plt.plot(Bhat.ravel(), 'r.'); plt.xlabel('markers x genes'); plt.ylabel('effect
-size');
+plt.plot(Bhat.ravel(), 'r.'); plt.xlabel('markers x genes'); plt.ylabel('effect size');
 
 ## compute metrics
 metrics = seq.calculate_metrics(Bhat, Bnorm)
@@ -141,7 +140,7 @@ positive.
 
 In practise, we can reject all discoveries below a threshold (e.g. 25% of
 the maximum in magnitude effect size). We can enforce this condition in the
-computations of metrics (last two lines of the above code) as follows:
+computation of metrics (last two lines of the above code) as follows:
 
 ```python
 metrics = seq.calculate_metrics(Bhat, Bnorm, beta_thr=0.25)
