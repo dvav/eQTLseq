@@ -7,7 +7,7 @@ setup(
     name='eQTLseq',
     version='17.02.14',
     description='Hierarchical probabilistic models for multiple gene/variant associations based on NGS data',
-    long_description=' ',
+    long_description='Hierarchical probabilistic models for multiple gene/variant associations based on NGS data',
     author='Dimitrios V. Vavoulis',
     author_email='Dimitris.Vavoulis@ndcls.well.ox.ac.uk',
     url='https://github.com/dvav/eQTLseq',
