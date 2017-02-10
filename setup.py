@@ -5,7 +5,7 @@ except ImportError:
 
 setup(
     name='eQTLseq',
-    version='17.02.14',
+    version='17.02.10',
     description='Hierarchical probabilistic models for multiple gene/variant associations based on NGS data',
     long_description='Hierarchical probabilistic models for multiple gene/variant associations based on NGS data',
     author='Dimitrios V. Vavoulis',
