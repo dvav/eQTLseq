@@ -8,6 +8,7 @@ import scipy.optimize as _opt
 import scipy.special as _spc
 
 import eQTLseq.utils as _utils
+import eQTLseq.trans as _trans
 
 
 def fit_nbinom_model(read_counts, normalised=False):
@@ -20,7 +21,7 @@ def fit_nbinom_model(read_counts, normalised=False):
             - n_samples * _nmp.log(ymean + alpha)
 
     # iterate over genes and fit across samples
-    ydata = read_counts if normalised else read_counts / _utils.calculate_norm_factors(read_counts)
+    ydata = read_counts if normalised else read_counts / _trans.calculate_norm_factors(read_counts)
     ymean = _nmp.mean(ydata, 1)
     alpha = _nmp.zeros(n_genes)
     converged = _nmp.zeros(n_genes, dtype=bool)
