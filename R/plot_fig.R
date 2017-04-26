@@ -58,4 +58,43 @@ gg_sim = read_delim('data/cnts.txt', col_names = FALSE, delim = ' ') %>%
   theme(axis.line = element_line(size = 0.25))
 
 
-plot_grid(gg_mafs, gg_pars, gg_beta, gg_folds, gg_cnts, gg_sim, align = 'hv', ncol = 2, labels = 'auto')
+cowplot::plot_grid(gg_mafs, gg_pars, gg_beta, gg_folds, gg_cnts, gg_sim, align = 'hv', ncol = 2, labels = 'auto')
+
+
+gg_obs = read_csv('data/pars2.txt') %>%
+  ggplot() +
+  geom_point(aes(x = MeanObs, y = VarObs), size = 0.01, color = 'black') +
+  geom_abline(linetype = 'dashed', size = 0.25) +
+  scale_x_continuous(trans = 'log10') +
+  scale_y_continuous(trans = 'log10') +
+  theme_classic() +
+  theme(axis.line = element_line(size = 0.25))
+
+gg_est = read_csv('data/pars2.txt') %>%
+  ggplot() +
+  geom_point(aes(x = MeanEst, y = VarEst), size = 0.01, color = 'black') +
+  geom_abline(linetype = 'dashed', size = 0.25) +
+  scale_x_continuous(trans = 'log10') +
+  scale_y_continuous(trans = 'log10') +
+  theme_classic() +
+  theme(axis.line = element_line(size = 0.25))
+
+gg_mean = read_csv('data/pars2.txt') %>%
+  ggplot() +
+  geom_point(aes(x = MeanObs, y = MeanEst), size = 0.01, color = 'black') +
+  scale_x_continuous(trans = 'log10') +
+  scale_y_continuous(trans = 'log10') +
+  theme_classic() +
+  theme(axis.line = element_line(size = 0.25),
+        panel.grid.major = element_line(linetype = 'dashed', size = 0.25))
+
+gg_var = read_csv('data/pars2.txt') %>%
+  ggplot() +
+  geom_point(aes(x = VarObs, y = VarEst), size = 0.01, color = 'black') +
+  scale_x_continuous(trans = 'log10') +
+  scale_y_continuous(trans = 'log10') +
+  theme_classic() +
+  theme(axis.line = element_line(size = 0.25),
+        panel.grid.major = element_line(linetype = 'dashed', size = 0.25))
+
+cowplot::plot_grid(gg_obs, gg_est, gg_mean, gg_var, align = 'hv', nrow = 2, labels = 'auto')
