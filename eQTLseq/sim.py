@@ -137,3 +137,45 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S'
 
     #
     return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta, 'poisson': poisson, 'outliers': outliers.T}
+
+
+def simulate_eQTLs_alt(G, mu, phi, idxs_eQTLs=None, n_genes_hot=10, size=4):
+    """Simulate eQTLs with negative binomially distributed gene expression data."""
+    _, n_markers = G.shape
+    n_genes = phi.size
+    n_markers_hot = len(idxs_eQTLs)
+
+    assert 1 <= n_markers_hot < n_markers
+    assert 1 <= n_genes_hot < n_genes
+    assert _nmp.all(_nmp.std(G, 0) > 0) and _nmp.all(_nmp.std(G, 1) > 0)
+    assert size > 1
+
+    # coefficients
+    beta = _nmp.zeros((n_genes, n_markers))
+    idxs_genes_hot = _nmp.hstack([_rnd.choice(n_genes, (n_genes_hot, 1), replace=False) for _ in idxs_eQTLs])
+    beta[idxs_genes_hot, idxs_eQTLs] = 1 + _rnd.exponential(size=(n_genes_hot, n_markers_hot))
+
+    beta = beta * _rnd.choice([-1, 1], size=beta.shape)
+
+    # scale coefficients
+    G = (G - _nmp.mean(G, 0)) / _nmp.std(G, 0)
+
+    GBT = G.dot(beta.T)
+    mx = _nmp.max(_nmp.abs(GBT), 0)
+    idxs = mx != 0
+    beta[idxs, :] = beta[idxs, :] / mx[idxs, None] * _nmp.log(size)
+
+    # compute phenotype
+    GBT = G.dot(beta.T)
+    Y = _rnd.normal(GBT, 1)
+    Z = _utils.sample_nbinom(mu * _nmp.exp(GBT), phi)
+
+    # remove genes with zero variance
+    idxs = _nmp.std(Z, 0) > 0
+    Z = Z[:, idxs]
+    mu = mu[idxs]
+    phi = phi[idxs]
+    beta = beta[idxs, :]
+
+    #
+    return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta}

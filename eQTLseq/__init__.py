@@ -7,6 +7,7 @@ from eQTLseq.utils import calculate_metrics
 
 from eQTLseq.sim import fit_nbinom_model
 from eQTLseq.sim import simulate_eQTLs
+from eQTLseq.sim import simulate_eQTLs_alt
 from eQTLseq.sim import simulate_genotypes
 
 from eQTLseq.trans import calculate_norm_factors
