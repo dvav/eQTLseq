@@ -61,7 +61,7 @@ def simulate_genotypes(MAF, n_samples=1000, n_markers=100):
     return {'G': G, 'MAF': MAF}
 
 
-def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S', 0.05, 5, 10)):
+def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S', 0.05, 5, 10), gerr=0.1):
     """Simulate eQTLs with negative binomially distributed gene expression data."""
     _, n_markers = G.shape
     n_genes = phi.size
@@ -72,7 +72,8 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S'
     assert _nmp.all(_nmp.std(G, 0) > 0) and _nmp.all(_nmp.std(G, 1) > 0)
     assert size > 1
     assert 0 <= pois < 1
-    assert out[0] in ['R', 'S'] and 0 <= out[1] < 1 and out[2] > 0 and out[2] < out[3]
+    assert out[0] in ['R', 'S'] and 0 <= out[1] < 1 and 0 < out[2] < out[3]
+    assert 0 <= gerr < 1
 
     # poisson distributed genes
     poisson = _nmp.zeros(n_genes, dtype='bool')
@@ -126,6 +127,15 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S'
         outliers[sample_idxs, gene_idxs] = True
     Z[outliers] = Z[outliers] * _rnd.uniform(out[2], out[3], size=_nmp.count_nonzero(outliers))
 
+    # genotypic errors
+    G = G.copy()
+    if gerr > 0:
+        gerrors = _rnd.choice((True, False), size=(n_samples, n_markers), p=(gerr, 1 - gerr))
+    else:
+        gerrors = _nmp.zeros((n_samples, n_markers), dtype=bool)
+    G[gerrors] = _rnd.choice((0, 1, 2), size=_nmp.count_nonzero(gerrors))  # just an approximation
+    G = G[:, _nmp.std(G, 0) > 0]    # remove monomorphic loci
+
     # remove genes with zero variance
     idxs = _nmp.std(Z, 0) > 0
     Z = Z[:, idxs]
@@ -136,7 +146,8 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S'
     outliers = outliers[:, idxs]
 
     #
-    return {'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta, 'poisson': poisson, 'outliers': outliers.T}
+    return {'G': G, 'Z': Z.T, 'Y': Y.T, 'mu': mu, 'phi': phi, 'beta': beta, 'poisson': poisson, 'outliers': outliers.T,
+            'gerrors': gerrors}
 
 
 def simulate_eQTLs_alt(G, mu, phi, idxs_eQTLs=None, n_genes_hot=10, size=4):
