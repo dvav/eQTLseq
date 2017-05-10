@@ -129,10 +129,12 @@ def simulate_eQTLs(G, mu, phi, pattern=(1, 10, 0, 0), size=4, pois=0.5, out=('S'
 
     # genotypic errors
     G = G.copy()
+    gerrors = _nmp.zeros((n_samples, n_markers), dtype=bool)
     if gerr > 0:
-        gerrors = _rnd.choice((True, False), size=(n_samples, n_markers), p=(gerr, 1 - gerr))
-    else:
-        gerrors = _nmp.zeros((n_samples, n_markers), dtype=bool)
+        n_elements = n_samples * n_markers
+        n_errors = int(n_elements * gerr)
+        idxs = _rnd.choice(n_elements, n_errors, replace=False)
+        gerrors[_nmp.unravel_index(idxs, (n_samples, n_markers))] = True
     G[gerrors] = _rnd.choice((0, 1, 2), size=_nmp.count_nonzero(gerrors))  # just an approximation
     G = G[:, _nmp.std(G, 0) > 0]    # remove monomorphic loci
 
